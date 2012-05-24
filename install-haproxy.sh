@@ -145,6 +145,16 @@ remote_cmd $LB_HOST "rm -f /etc/haproxy/haproxy.cfg"
 remote_cmd $LB_HOST "mv /tmp/${PREFIX}_${LB_NAME}_haproxy.cfg /etc/haproxy/haproxy.cfg"
 remote_cmd $LB_HOST "/usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid)"
 echo ""
+echo "** Adding init.d/haproxy auto start**"
+echo ""
+
+if [ $OS = "rhel" ]; then
+      remote_cmd $LB_HOST "/sbin/chkconfig --add haproxy"
+else
+      remote_cmd $LB_HOST "sed -i 's#ENABLED=.*#ENABLED=1#g' /etc/default/haproxy"
+      remote_cmd $LB_HOST "/usr/sbin/update-rc.d haproxy defaults"
+fi
+echo ""
 echo "** Tuning Network **"
 echo ""
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.ip_nonlocal_bind.*/d' /etc/sysctl.conf"
