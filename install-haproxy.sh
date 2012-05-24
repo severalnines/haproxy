@@ -12,6 +12,8 @@ hostnames=`cat ../.s9s/hostnames | grep -v "#"`
 MYSQL_PASSWORD="$cmon_password"
 MYSQL_USERNAME="cmon"
 MYSQL_BINDIR=""
+CLUSTER_ID=1
+CMON_DB='cmon'
 
 PREFIX="s9s"
 SUFFIX="1"
@@ -22,6 +24,7 @@ LB_HOST="$1"
 OS="$2"
 CLUSTER="$3"
 
+
 if [ -z $LB_HOST ]; then
   echo "To install haproxy on host <host>, and OS rhel or debian (pick one), "
   echo "and cluster is galera or mysqlcluster do:"
@@ -31,6 +34,7 @@ if [ -z $LB_HOST ]; then
 fi
 
 PKG_MGR=""
+
 
 case $OS in
 	rhel)
@@ -61,6 +65,25 @@ esac
 echo "WARNING! Don't use haproxy with persistent connections"
 echo "Press any key to continue"
 read $key
+
+
+echo "Getting hosts from cmon db"
+
+hostnames2=`$MYSQL_BINDIR/mysql -B -N --host=$cmon_monitor --port=$MYSQL_PORT --user=cmon --password=$cmon_password --database=$CMON_DB -e "select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and connected=1 and m.cid=$CLUSTER_ID"`
+
+if [ -z "$hostnames2" ]; then
+   echo "Failed to get hostnames from cmon_db"
+   echo "Using $hostnames"
+else
+   hostnames=$hostnames2
+fi
+
+if [ -z "$hostnames" ]; then
+   echo "No hostnames found."
+   exit
+fi
+
+echo "Using hostnames $hostnames"
 
 echo "Use the $OS haproxy template:"
 echo "cp haproxy.cfg.tmpl.$OS haproxy.cfg.tmpl"
