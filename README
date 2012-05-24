@@ -1,4 +1,3 @@
-
 Example:
 
 cd s9s-galera-2.1.0/mysql/scripts/install
@@ -11,5 +10,22 @@ s9s-galera-2.1.0/mysql/scripts/install/haproxy
 cd haproxy
 ./install-haproxy.sh 10.0.1.11 debian galera
 
+The above example installs HaProxy on 10.0.11, using galera 
+on an ubuntu/debian platform.
 
+** Check also, you may want to modify parameters here:
+   haproxy.cfg.tmpl.debian|rhel 
+   You may want to change PASSWORD:       
+   user admin insecure-password PASSWORD
+   user stats insecure-password PASSWORD
+
+** MySQL Cluster users:
+In mysqlchk.sh.mysqlcluster you should change CHECK_QUERY to
+make a PRIMARY KEY select that always succeed on an NDB table.
+
+** In install-haproxy.sh
+Change the name of the HaProxy (LB_NAME)
+and also what mysql port the HaProxy should listen on:
+HAPROXY_MYSQL_LISTEN_PORT="33306"
+LB_NAME="production"
 
