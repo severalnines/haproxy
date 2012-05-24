@@ -108,6 +108,10 @@ echo "* installing xinetd, mysqlchk.sh, and creating backend file *"
 echo "*************************************************************"
 for h in $hostnames 
 do
+  if [ "$h" = "$LB_HOST" ]; then
+       echo "ERROR: Trying to install HaProxy on a database host"
+       exit
+  fi 
   remote_cmd2 $h  "sed  -i  '/mysqlchk        9200\/tcp/d' /etc/services"
   remote_cmd $h "echo \"mysqlchk        9200/tcp\" | sudo tee --append /etc/services"
   remote_copy mysqlchk.sh $h /tmp 
@@ -123,13 +127,14 @@ do
       remote_cmd $h "/usr/sbin/update-rc.d xinetd defaults"
   fi
   echo $h >> ${PREFIX}_${HAPROXY_MYSQL_LISTEN_PORT}_${LB_NAME}.backend
+  echo "Configuration of $h completed "
 done
-
+echo ""
 echo "*************************************************************"
 echo "* writing $PWD/${PREFIX}_${LB_NAME}_haproxy.cfg               *"
 echo "*************************************************************"
 ./makecfg.sh $PREFIX $SUFFIX  > ${PREFIX}_${LB_NAME}_haproxy.cfg
-
+echo ""
 echo "*************************************************************"
 echo "* Installing haproxy on $LB_HOST                            *"
 echo "*************************************************************"
@@ -139,6 +144,25 @@ remote_copy ${PREFIX}_${LB_NAME}_haproxy.cfg $LB_HOST /tmp
 remote_cmd $LB_HOST "rm -f /etc/haproxy/haproxy.cfg"
 remote_cmd $LB_HOST "mv /tmp/${PREFIX}_${LB_NAME}_haproxy.cfg /etc/haproxy/haproxy.cfg"
 remote_cmd $LB_HOST "/usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid)"
-
-
-
+echo ""
+echo "** Tuning Network **"
+echo ""
+remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.ip_nonlocal_bind.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.ip_nonlocal_bind=1\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_tw_reuse.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_tw_reuse=1\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.ip_local_port_range.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.ip_local_port_range = 1024 65023\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_max_syn_backlog.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_syn_backlog=40000\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_max_tw_buckets.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_tw_buckets=400000\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_max_orphans.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_orphans=60000\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_synack_retries.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_synack_retries=3\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd2 $LB_HOST "sed  -i  'net.core.somaxconn.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.core.somaxconn=40000\" | sudo tee --append /etc/sysctl.conf"
+echo ""
+echo "** Reboot is needed of $LB_HOST for network settings to take effect! **"
+echo ""
