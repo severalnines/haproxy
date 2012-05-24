@@ -3,10 +3,11 @@ Example:
 
 cd s9s-galera-2.1.0/mysql/scripts/install
 
-install haproxy in e.g:
+install haproxy:
+
+git clone git@github.com:severalnines/haproxy.git
 
 s9s-galera-2.1.0/mysql/scripts/install/haproxy
-
 cd haproxy
 ./install-haproxy.sh 10.0.1.11 debian galera
 
