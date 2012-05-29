@@ -18,10 +18,15 @@ MYSQL_BINDIR=""
 CLUSTER_ID=1
 CMON_DB='cmon'
 
-PREFIX="s9s"
+
 SUFFIX="1"
+####  THE FOLLOWING PARAMS IF YOU WANT
 HAPROXY_MYSQL_LISTEN_PORT="33306"
 LB_NAME="production"
+LB_ADMIN_USER='admin'
+LB_ADMIN_PASSWORD='admin'
+PREFIX="s9s"
+#### END OF CHANGE
 
 LB_HOST="$1"
 OS="$2"
@@ -91,7 +96,8 @@ echo "Using hostnames $hostnames"
 echo "Use the $OS haproxy template:"
 echo "cp haproxy.cfg.tmpl.$OS haproxy.cfg.tmpl"
 cp haproxy.cfg.tmpl.$OS haproxy.cfg.tmpl
-
+sed -i "s#ADMIN_PASSWORD#$LB_ADMIN_PASSWORD#g" haproxy.cfg.tmpl
+sed -i "s#ADMIN_USER#$LB_ADMIN_USER#g" haproxy.cfg.tmpl
 
 echo "Use the $CLUSTER mysqlchk template:"
 echo "cp mysqlchk.sh.$CLUSTER mysqlchk.sh"
@@ -176,6 +182,15 @@ remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_synack_retries.*/d' /etc/sysctl.con
 remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_synack_retries=3\" | sudo tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.core.somaxconn.*/d' /etc/sysctl.conf"
 remote_cmd $LB_HOST  "echo \"net.core.somaxconn=40000\" | sudo tee --append /etc/sysctl.conf"
+
+$MYSQL_BINDIR/mysql --host=$cmon_monitor --port=$MYSQL_PORT --user=cmon --password=$cmon_password --database=$CMON_DB -e "INSERT INTO haproxy_server(cid, lb_host,lb_name,lb_port,lb_admin,lb_password) VALUES ($cluster_id, '$LB_HOST','$LB_NAME', '$LB_ADMIN_PORT', '$LB_ADMIN_USER', $LB_ADMIN_PASSWORD')"
+
+
 echo ""
 echo "** Reboot is needed of $LB_HOST for network settings to take effect! **"
+echo ""
+
+echo ""
+echo "**The admin interface is on http://${LB_HOST}:9600 **"
+echo "**Login with ${ADMIN_USER}/${ADMIN_PASSWORD}"
 echo ""
