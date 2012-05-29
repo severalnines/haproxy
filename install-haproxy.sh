@@ -142,6 +142,9 @@ echo "*************************************************************"
 echo "* Installing haproxy on $LB_HOST                            *"
 echo "*************************************************************"
 
+if [ $OS = "rhel" ]; then
+   remote_cmd $LB_HOST "$EPEL"
+fi
 remote_cmd $LB_HOST "$PKG_MGR haproxy"
 remote_copy ${PREFIX}_${LB_NAME}_haproxy.cfg $LB_HOST /tmp 
 remote_cmd $LB_HOST "rm -f /etc/haproxy/haproxy.cfg"
