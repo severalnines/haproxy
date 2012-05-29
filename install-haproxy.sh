@@ -104,7 +104,7 @@ cp mysqlchk.sh.$CLUSTER mysqlchk.sh
 rm ${PREFIX}*.backend
 sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$MYSQL_PASSWORD\"#g" mysqlchk.sh
 sed -i "s#MYSQL_USERNAME=.*#MYSQL_USERNAME=\"$MYSQL_USERNAME\"#g" mysqlchk.sh
-sed -i "s#MYSQL_BINDIR=.*#MYSQL_BINDIR=\"$MYSQL_BINDIR\"#g" mysqlchk.sh
+sed -i "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BINDIR/mysql\"#g" mysqlchk.sh
 
 echo "*************************************************************"
 echo "* installing xinetd, mysqlchk.sh, and creating backend file *"
