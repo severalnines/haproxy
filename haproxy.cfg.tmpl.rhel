@@ -29,7 +29,7 @@ defaults
 
 userlist STATSUSERS
         group admin users admin
-        user admin insecure-password PASSWORD
+        user ADMIN_USER insecure-password ADMIN_PASSWORD
         user stats insecure-password PASSWORD
 
 listen admin_page 0.0.0.0:9600
