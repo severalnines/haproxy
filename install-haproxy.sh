@@ -110,7 +110,7 @@ cp mysqlchk.sh.$CLUSTER mysqlchk.sh
 rm ${PREFIX}*.backend
 sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$MYSQL_PASSWORD\"#g" mysqlchk.sh
 sed -i "s#MYSQL_USERNAME=.*#MYSQL_USERNAME=\"$MYSQL_USERNAME\"#g" mysqlchk.sh
-sed -i "s#MYSQL_BINDIR=.*#MYSQL_BINDIR=\"$MYSQL_BINDIR\"#g" mysqlchk.sh
+sed -i "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BINDIR/mysql\"#g" mysqlchk.sh
 
 echo "*************************************************************"
 echo "* installing xinetd, mysqlchk.sh, and creating backend file *"
@@ -148,6 +148,9 @@ echo "*************************************************************"
 echo "* Installing haproxy on $LB_HOST                            *"
 echo "*************************************************************"
 
+if [ $OS = "rhel" ]; then
+   remote_cmd $LB_HOST "$EPEL"
+fi
 remote_cmd $LB_HOST "$PKG_MGR haproxy"
 remote_copy ${PREFIX}_${LB_NAME}_haproxy.cfg $LB_HOST /tmp 
 remote_cmd $LB_HOST "rm -f /etc/haproxy/haproxy.cfg"
