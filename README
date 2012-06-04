@@ -38,6 +38,8 @@ Can't connect to MySQL server on '10.0.1.10' (99)
 E.g, if the LB is installed on 10.0.1.11 do:
 GRANT INSERT, SELECT, DELETE, UPDATE ON database.* TO 'johan'@'10.0.1.11' IDENTIFIED BY 'severalnines';
 
+** TODO
+You may have to tune your TCP further to avoid http://bugs.mysql.com/bug.php?id=40662 (not a bug, expected behavior) if you open/close connects "too" fast.
 
 
 EOF
