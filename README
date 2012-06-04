@@ -29,8 +29,15 @@ and also what mysql port the HaProxy should listen on:
 HAPROXY_MYSQL_LISTEN_PORT="33306"
 LB_NAME="production"
 
+** Reboot the HAProxy node.
+If you don't reboot you will get strange error messages after a while:
+Can't connect to MySQL server on '10.0.1.10' (99)
+Can't connect to MySQL server on '10.0.1.10' (99)
+
 ** Finally, don't forget to GRANT the load balancer host access to the mysql server
 E.g, if the LB is installed on 10.0.1.11 do:
 GRANT INSERT, SELECT, DELETE, UPDATE ON database.* TO 'johan'@'10.0.1.11' IDENTIFIED BY 'severalnines';
+
+
 
 EOF
