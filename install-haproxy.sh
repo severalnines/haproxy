@@ -75,7 +75,7 @@ echo "WARNING! Don't use haproxy with persistent connections"
 echo "HAProxy will be:"
 echo "- installed on ${LB_HOST}"
 echo "- listening for mysql connections on port ${HAPROXY_MYSQL_LISTEN_PORT}"
-echo "Press any key to continue"
+echo "Press <ENTER> to continue"
 read $key
 
 
@@ -167,6 +167,7 @@ echo ""
 
 if [ $OS = "rhel" ]; then
       remote_cmd $LB_HOST "/sbin/chkconfig --add haproxy"
+      remote_cmd $LB_HOST "/sbin/chkconfig haproxy on"
 else
       remote_cmd $LB_HOST "sed -i 's#ENABLED=.*#ENABLED=1#g' /etc/default/haproxy"
       remote_cmd $LB_HOST "/usr/sbin/update-rc.d haproxy defaults"
