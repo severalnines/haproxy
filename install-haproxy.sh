@@ -32,7 +32,7 @@ PREFIX="s9s"
 LB_HOST="$1"
 OS="$2"
 CLUSTER="$3"
-
+MYSQL_LISTER_PORT=$4
 
 if [ -z $LB_HOST ]; then
   echo "To install haproxy on host <host>, and OS rhel or debian (pick one), "
@@ -72,6 +72,9 @@ case $CLUSTER in
 esac  
 	
 echo "WARNING! Don't use haproxy with persistent connections"
+echo "HAProxy will be:"
+echo "- installed on ${LB_HOST}"
+echo "- listening for mysql connections on port ${HAPROXY_MYSQL_LISTEN_PORT}"
 echo "Press any key to continue"
 read $key
 
@@ -198,4 +201,6 @@ echo ""
 echo ""
 echo "**The admin interface is on http://${LB_HOST}:9600 **"
 echo "**Login with ${LB_ADMIN_USER}/${LB_ADMIN_PASSWORD}"
+echo "**HAProxy listens on ${LB_HOST}:${HAPROXY_MYSQL_LISTEN_PORT} for mysql connections."
+echo "**Don't forget to GRANT ${LB_HOST} on your mysql servers!"
 echo ""
