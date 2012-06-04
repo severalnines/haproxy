@@ -40,6 +40,7 @@ GRANT INSERT, SELECT, DELETE, UPDATE ON database.* TO 'johan'@'10.0.1.11' IDENTI
 
 ** TODO
 You may have to tune your TCP further to avoid http://bugs.mysql.com/bug.php?id=40662 (not a bug, expected behavior) if you open/close connects "too" fast.
-
+E.g, this TCP parameter can be tuned: tcp_fin_timeout. The install-haproxy script sets it to '5'.
+If you use bencher to benchmark you may run into this issue as bencher will stress the system quite a lot.
 
 EOF

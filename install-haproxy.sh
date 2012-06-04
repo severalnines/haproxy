@@ -191,6 +191,8 @@ remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_synack_retries.*/d' /etc/sysctl.con
 remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_synack_retries=3\" | sudo tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.core.somaxconn.*/d' /etc/sysctl.conf"
 remote_cmd $LB_HOST  "echo \"net.core.somaxconn=40000\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_fin_timeout.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_fin_timeout = 5\" | sudo tee --append /etc/sysctl.conf"
 
 $MYSQL_BINDIR/mysql --host=$cmon_monitor --port=$MYSQL_PORT --user=cmon --password=$cmon_password --database=$CMON_DB -e "INSERT INTO haproxy_server(cid, lb_host,lb_name,lb_port,lb_admin,lb_password) VALUES ($CLUSTER_ID, '$LB_HOST','$LB_NAME', '$LB_ADMIN_PORT', '$LB_ADMIN_USER', '$LB_ADMIN_PASSWORD')"
 
