@@ -43,4 +43,6 @@ You may have to tune your TCP further to avoid http://bugs.mysql.com/bug.php?id=
 E.g, this TCP parameter can be tuned: tcp_fin_timeout. The install-haproxy script sets it to '5'.
 If you use bencher to benchmark you may run into this issue as bencher will stress the system quite a lot.
 
+You can also try 'tcp_tw_reuse=1' by doing echo "1" > /proc/sys/net/ipv4/tcp_tw_reuse
+This is not currently set auto (more testing needed).
 EOF
