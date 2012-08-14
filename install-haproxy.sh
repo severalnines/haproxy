@@ -33,7 +33,7 @@ LB_HOST="$1"
 OS="$2"
 CLUSTER="$3"
 MYSQL_LISTER_PORT=$4
-
+HAPROXY_OPTS="-f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid)"
 if [ -z $LB_HOST ]; then
   echo "To install haproxy on host <host>, and OS rhel or debian (pick one), "
   echo "and cluster is galera or mysqlcluster do:"
@@ -48,17 +48,18 @@ PKG_MGR=""
 case $OS in
 	rhel)
         PKG_MGR="yum install -y "
-        MYSQL_BINDIR="/usr/bin"
 	;;
 	debian)
         PKG_MGR="apt-get install -y "
-        MYSQL_BINDIR="/usr/local/mysql/bin"
 	;;
 	*)
 	echo "OS $OS not supported"
 	exit
 	;;
 esac	
+
+MYSQL_BINDIR=$bindir
+MYSQL_PORT=$mysql_port
 
 case $CLUSTER in
         galera)
@@ -115,6 +116,7 @@ cp mysqlchk.sh.$CLUSTER mysqlchk.sh
 rm ${PREFIX}*.backend
 sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$MYSQL_PASSWORD\"#g" mysqlchk.sh
 sed -i "s#MYSQL_USERNAME=.*#MYSQL_USERNAME=\"$MYSQL_USERNAME\"#g" mysqlchk.sh
+sed -i "s#MYSQL_PORT=.*#MYSQL_PORT=\"$MYSQL_PORT\"#g" mysqlchk.sh
 sed -i "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BINDIR/mysql\"#g" mysqlchk.sh
 
 echo "*************************************************************"
@@ -160,7 +162,8 @@ remote_cmd $LB_HOST "$PKG_MGR haproxy"
 remote_copy ${PREFIX}_${LB_NAME}_haproxy.cfg $LB_HOST /tmp 
 remote_cmd $LB_HOST "rm -f /etc/haproxy/haproxy.cfg"
 remote_cmd $LB_HOST "mv /tmp/${PREFIX}_${LB_NAME}_haproxy.cfg /etc/haproxy/haproxy.cfg"
-remote_cmd $LB_HOST "/usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid)"
+#remote_cmd $LB_HOST "/usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid"
+remote_cmd $LB_HOST "/usr/sbin/haproxy ${HAPROXY_OPTS}"
 echo ""
 echo "** Adding init.d/haproxy auto start**"
 echo ""
@@ -194,7 +197,17 @@ remote_cmd $LB_HOST  "echo \"net.core.somaxconn=40000\" | sudo tee --append /etc
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_fin_timeout.*/d' /etc/sysctl.conf"
 remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_fin_timeout = 5\" | sudo tee --append /etc/sysctl.conf"
 
-$MYSQL_BINDIR/mysql --host=$cmon_monitor --port=$MYSQL_PORT --user=cmon --password=$cmon_password --database=$CMON_DB -e "INSERT INTO haproxy_server(cid, lb_host,lb_name,lb_port,lb_admin,lb_password) VALUES ($CLUSTER_ID, '$LB_HOST','$LB_NAME', '$LB_ADMIN_PORT', '$LB_ADMIN_USER', '$LB_ADMIN_PASSWORD')"
+$MYSQL_BINDIR/mysql --host=$cmon_monitor --port=$MYSQL_PORT --user=cmon --password=$cmon_password --database=$CMON_DB -e "REPLACE INTO haproxy_server(cid, lb_host,lb_name,lb_port,lb_admin,lb_password) VALUES ($CLUSTER_ID, '$LB_HOST','$LB_NAME', '$LB_ADMIN_PORT', '$LB_ADMIN_USER', '$LB_ADMIN_PASSWORD')"
+
+
+QUERY="REPLACE INTO $CMON_DB.ext_proc (cid, hostname,bin, opts,cmd, proc_name, port) VALUES($CLUSTER_ID, '$LB_HOST','/usr/sbin/haproxy', \"${HAPROXY_OPTS}\", \"/usr/sbin/haproxy ${HAPROXY_OPTS}\",'haproxy', 9600)"
+$bindir/mysql -B -N  -ucmon -p$cmon_password -h$cmon_monitor -P${MYSQL_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
+if [  $? -ne 0 ]; then
+   echo "Query failed: $QUERY"
+   echo ""
+   cat /tmp/err.log
+   exit 1
+fi
 
 
 echo ""
