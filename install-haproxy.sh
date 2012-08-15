@@ -48,9 +48,11 @@ PKG_MGR=""
 case $OS in
 	rhel)
         PKG_MGR="yum install -y "
+	PHP_CURL="php-curl"
 	;;
 	debian)
         PKG_MGR="apt-get install -y "
+	PHP_CURL="php5-curl"
 	;;
 	*)
 	echo "OS $OS not supported"
@@ -159,6 +161,7 @@ if [ $OS = "rhel" ]; then
    remote_cmd2 $LB_HOST "$EPEL"
 fi
 remote_cmd $LB_HOST "$PKG_MGR haproxy"
+remote_cmd $LB_HOST "$PKG_MGR $PHP_CURL"
 remote_copy ${PREFIX}_${LB_NAME}_haproxy.cfg $LB_HOST /tmp 
 remote_cmd $LB_HOST "rm -f /etc/haproxy/haproxy.cfg"
 remote_cmd $LB_HOST "mv /tmp/${PREFIX}_${LB_NAME}_haproxy.cfg /etc/haproxy/haproxy.cfg"
@@ -200,7 +203,7 @@ remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_fin_timeout = 5\" | sudo tee --append 
 $MYSQL_BINDIR/mysql --host=$cmon_monitor --port=$MYSQL_PORT --user=cmon --password=$cmon_password --database=$CMON_DB -e "REPLACE INTO haproxy_server(cid, lb_host,lb_name,lb_port,lb_admin,lb_password) VALUES ($CLUSTER_ID, '$LB_HOST','$LB_NAME', '$LB_ADMIN_PORT', '$LB_ADMIN_USER', '$LB_ADMIN_PASSWORD')"
 
 
-QUERY="REPLACE INTO $CMON_DB.ext_proc (cid, hostname,bin, opts,cmd, proc_name, port) VALUES($CLUSTER_ID, '$LB_HOST','/usr/sbin/haproxy', \"${HAPROXY_OPTS}\", \"/usr/sbin/haproxy ${HAPROXY_OPTS}\",'haproxy', 9600)"
+QUERY="REPLACE INTO $CMON_DB.ext_proc (cid, hostname,bin, opts,cmd, proc_name, port) VALUES($CLUSTER_ID, '$LB_HOST','/usr/sbin/haproxy', \"${HAPROXY_OPTS}\", \"/usr/sbin/haproxy ${HAPROXY_OPTS}\",'haproxy', $LB_ADMIN_PORT)"
 $bindir/mysql -B -N  -ucmon -p$cmon_password -h$cmon_monitor -P${MYSQL_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
 if [  $? -ne 0 ]; then
    echo "Query failed: $QUERY"
