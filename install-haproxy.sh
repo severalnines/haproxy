@@ -20,7 +20,7 @@ CMON_DB='cmon'
 
 
 SUFFIX="1"
-####  THE FOLLOWING PARAMS IF YOU WANT
+#### CHANGE THE FOLLOWING PARAMS IF YOU WANT
 HAPROXY_MYSQL_LISTEN_PORT="33306"
 LB_NAME="production"
 LB_ADMIN_USER='admin'
@@ -32,7 +32,7 @@ PREFIX="s9s"
 LB_HOST="$1"
 OS="$2"
 CLUSTER="$3"
-MYSQL_LISTER_PORT=$4
+MYSQL_LISTEN_PORT=$4
 HAPROXY_OPTS="-f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid)"
 if [ -z $LB_HOST ]; then
   echo "To install haproxy on host <host>, and OS rhel or debian (pick one), "
@@ -221,5 +221,6 @@ echo ""
 echo "**The admin interface is on http://${LB_HOST}:9600 **"
 echo "**Login with ${LB_ADMIN_USER}/${LB_ADMIN_PASSWORD}"
 echo "**HAProxy listens on ${LB_HOST}:${HAPROXY_MYSQL_LISTEN_PORT} for mysql connections."
-echo "**Don't forget to GRANT ${LB_HOST} on your mysql servers!"
+echo "**Don't forget to GRANT ${LB_HOST} on your mysql servers:"
+echo "GRANT <privs> ON <db>.* TO '<user>'@'${LB_HOST}' IDENTIFIED BY '<password>'"
 echo ""

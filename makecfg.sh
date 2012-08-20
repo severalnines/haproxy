@@ -36,7 +36,7 @@ listen  "$DESC"
         balance leastconn 
         option httpchk
         option allbackups
-        default-server port 9200 inter 2s downinter 5s rise 3 fall 2 slowstart 60s maxconn 2048 maxqueue 128 weight 100
+        default-server port 9200 inter 2s downinter 5s rise 3 fall 2 slowstart 60s maxconn 256 maxqueue 128 weight 100
 	"
         for J in `cat $I`; do
                 SPLIT=(`echo $J | tr ',' ' '`);
