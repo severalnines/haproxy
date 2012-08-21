@@ -1,8 +1,9 @@
 ** Installation Example:
 
+Change into the install directory of your deployment package:
 cd s9s-galera-2.1.0/mysql/scripts/install
 
-install haproxy:
+Download haproxy:
 
 git clone git@github.com:severalnines/haproxy.git
 
@@ -44,7 +45,11 @@ install-haproxy.sh - queries the cmon db to get a list of mysql server hosts, ca
   Change the name of the HaProxy (LB_NAME) and also what mysql port the HaProxy should listen on:
   HAPROXY_MYSQL_LISTEN_PORT="33306"
   LB_NAME="production"
-  
+
+
+** Deployment
+For smaller setups (a couple of web servers) you can isntall one HaProxy on each Web Server.  
+For larger setups it may make sense to have a HaProxy layer so that many web servers goes to one HaProxy.
 
 ** Reboot the HAProxy node.
 If you don't reboot you may get strange error messages after a while:

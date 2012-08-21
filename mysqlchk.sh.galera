@@ -37,9 +37,10 @@ preflight_check()
 return_ok()
 {
     echo -e "HTTP/1.1 200 OK\r\n"
-    echo -e "Content-Type: Content-Type: text/plain\r\n"
+    echo -e "Content-Type: text/html\r\n"
+    echo -e "Content-Length: 43\r\n"
     echo -e "\r\n"
-    echo -e "MySQL is running.\r\n"
+    echo -e "<html><body>MySQL is running.</body></html>\r\n"
     echo -e "\r\n"
     rm $ERR_FILE $TMP_FILE
     exit 0
@@ -47,9 +48,10 @@ return_ok()
 return_fail()
 {
     echo -e "HTTP/1.1 503 Service Unavailable\r\n"
-    echo -e "Content-Type: Content-Type: text/plain\r\n"
+    echo -e "Content-Type: text/html\r\n"
+    echo -e "Content-Length: 42\r\n"
     echo -e "\r\n"
-    echo -e "MySQL is *down*.\r\n"
+    echo -e "<html><body>MySQL is *down*.</body></html>\r\n"
     sed -e 's/\n$/\r\n/' $ERR_FILE
     echo -e "\r\n"
     rm $ERR_FILE $TMP_FILE
