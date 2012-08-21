@@ -4,7 +4,8 @@ Change into the install directory of your deployment package:
 cd s9s-galera-2.1.0/mysql/scripts/install
 
 Download haproxy:
-
+RH/Centos: yum install git
+Debian/Ubutu: apt-get install git
 git clone git@github.com:severalnines/haproxy.git
 
 s9s-galera-2.1.0/mysql/scripts/install/haproxy
