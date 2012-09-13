@@ -200,7 +200,23 @@ remote_cmd $LB_HOST  "echo \"net.core.somaxconn=40000\" | sudo tee --append /etc
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_fin_timeout.*/d' /etc/sysctl.conf"
 remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_fin_timeout = 5\" | sudo tee --append /etc/sysctl.conf"
 
-$MYSQL_BINDIR/mysql --host=$cmon_monitor --port=$MYSQL_PORT --user=cmon --password=$cmon_password --database=$CMON_DB -e "REPLACE INTO haproxy_server(cid, lb_host,lb_name,lb_port,lb_admin,lb_password) VALUES ($CLUSTER_ID, '$LB_HOST','$LB_NAME', '$LB_ADMIN_PORT', '$LB_ADMIN_USER', '$LB_ADMIN_PASSWORD')"
+
+x=`remote_getreply $LB_HOST "curl ifconfig.me 2>/dev/null"`
+
+QUERY="select count(column_name) from information_schema.columns where table_schema='cmon' and table_name='haproxy_server' and column_name='server_addr'"
+CNT=`$bindir/mysql -A -B -N  -ucmon -p$cmon_password -h$cmon_monitor -P${MYSQL_PORT} -e "$QUERY" 2>&1`
+if [ $CNT -eq 0 ]; then 
+    QUERY="ALTER TABLE $CMON_DB.haproxy_server ADD COLUMN server_addr VARCHAR(255) DEFAULT ''"
+    $bindir/mysql -B -N  -ucmon -p$cmon_password -h$cmon_monitor -P${MYSQL_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
+    if [  $? -ne 0 ]; then
+	echo "Query failed: $QUERY"
+	echo ""
+	cat /tmp/err.log
+	exit 1
+    fi
+fi
+
+$MYSQL_BINDIR/mysql --host=$cmon_monitor --port=$MYSQL_PORT --user=cmon --password=$cmon_password --database=$CMON_DB -e "REPLACE INTO haproxy_server(cid, lb_host,lb_name,lb_port,lb_admin,lb_password,server_addr) VALUES ($CLUSTER_ID, '$LB_HOST','$LB_NAME', '$LB_ADMIN_PORT', '$LB_ADMIN_USER', '$LB_ADMIN_PASSWORD', '$x')"
 
 
 QUERY="REPLACE INTO $CMON_DB.ext_proc (cid, hostname,bin, opts,cmd, proc_name, port) VALUES($CLUSTER_ID, '$LB_HOST','/usr/sbin/haproxy', \"${HAPROXY_OPTS}\", \"/usr/sbin/haproxy ${HAPROXY_OPTS}\",'haproxy', $LB_ADMIN_PORT)"
@@ -217,6 +233,8 @@ echo ""
 echo "** Reboot is needed of $LB_HOST for network settings to take effect! **"
 echo ""
 
+echo "FIREWALL: To access Haproxy within ClusterControl, you should allow the clustercontrol server to connect to $x on port 9600"
+echo "**The admin interface is on http://${LB_HOST}:9600 **"
 echo ""
 echo "**The admin interface is on http://${LB_HOST}:9600 **"
 echo "**Login with ${LB_ADMIN_USER}/${LB_ADMIN_PASSWORD}"
