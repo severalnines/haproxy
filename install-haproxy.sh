@@ -1,4 +1,4 @@
-/s All files in this package is subject to the GPL v2 license
+# All files in this package is subject to the GPL v2 license
 # More information is in the COPYING file in the top directory of this package.
 # Copyright (C) 2011 Severalnines
 
@@ -135,7 +135,7 @@ do
        exit
   fi 
   remote_cmd2 $h  "sed  -i  '/mysqlchk        9200\/tcp/d' /etc/services"
-  remote_cmd $h "-t echo \"mysqlchk        9200/tcp\" | sudo tee --append /etc/services"
+  remote_cmd $h "echo \"mysqlchk        9200/tcp\" | sudo tee --append /etc/services"
   remote_copy mysqlchk.sh $h /tmp 
   remote_cmd $h "mv /tmp/mysqlchk.sh /usr/local/bin"
   remote_cmd $h "chmod 777 /usr/local/bin/mysqlchk.sh"
@@ -186,23 +186,23 @@ echo ""
 echo "** Tuning Network **"
 echo ""
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.ip_nonlocal_bind.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "-t echo \"net.ipv4.ip_nonlocal_bind=1\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.ip_nonlocal_bind=1\" | sudo tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_tw_reuse.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "-t echo \"net.ipv4.tcp_tw_reuse=1\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_tw_reuse=1\" | sudo tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.ip_local_port_range.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "-t echo \"net.ipv4.ip_local_port_range = 1024 65023\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.ip_local_port_range = 1024 65023\" | sudo tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_max_syn_backlog.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "-t echo \"net.ipv4.tcp_max_syn_backlog=40000\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_syn_backlog=40000\" | sudo tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_max_tw_buckets.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "-t echo \"net.ipv4.tcp_max_tw_buckets=400000\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_tw_buckets=400000\" | sudo tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_max_orphans.*/d' /etc/sysctl.conf"
 remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_orphans=60000\" | sudo tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_synack_retries.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "-t echo \"net.ipv4.tcp_synack_retries=3\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_synack_retries=3\" | sudo tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.core.somaxconn.*/d' /etc/sysctl.conf"
 remote_cmd $LB_HOST  "echo \"net.core.somaxconn=40000\" | sudo tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_fin_timeout.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "-t echo \"net.ipv4.tcp_fin_timeout = 5\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_fin_timeout = 5\" | sudo tee --append /etc/sysctl.conf"
 
 
 x=`remote_getreply $LB_HOST "curl ifconfig.me 2>/dev/null"`
