@@ -19,10 +19,9 @@ CLUSTER_ID=1
 CMON_DB='cmon'
 
 
-if [ "$USER" = "root" ]; then
+if [ `whoami` = "root" ]; then
     IDENTITY="-t $IDENTITY"
 fi
-
 SUFFIX="1"
 #### CHANGE THE FOLLOWING PARAMS IF YOU WANT
 HAPROXY_MYSQL_LISTEN_PORT="33306"
@@ -79,9 +78,10 @@ case $CLUSTER in
 esac  
 	
 echo "WARNING! Don't use haproxy with persistent connections"
-echo "HAProxy will be:"
-echo "- installed on ${LB_HOST}"
-echo "- listening for mysql connections on port ${HAPROXY_MYSQL_LISTEN_PORT}"
+echo "* HAProxy will be:"
+echo "  - installed on ${LB_HOST}"
+echo "  - listening for mysql connections on port ${HAPROXY_MYSQL_LISTEN_PORT}"
+echo "* mysqlchk.sh and xinetd will be installed on each mysql server "
 echo "Press <ENTER> to continue"
 read $key
 
