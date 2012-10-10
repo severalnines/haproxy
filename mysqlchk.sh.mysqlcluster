@@ -21,18 +21,18 @@ MYSQL_BIN="/usr/local/mysql/bin/mysql"
 CHECK_QUERY="select 1"
 preflight_check()
 {
-        for I in "$TMP_FILE" "$ERR_FILE"; do
-                if [ -f "$I" ]; then
-                        if [ ! -w $I ]; then
-                                echo -e "HTTP/1.1 503 Service Unavailable\r\n"
-                                echo -e "Content-Type: Content-Type: text/plain\r\n"
-                                echo -e "\r\n"
-                                echo -e "Cannot write to $I\r\n"
-                                echo -e "\r\n"
-                                exit 1
-                        fi
-                fi
-        done
+    for I in "$TMP_FILE" "$ERR_FILE"; do
+        if [ -f "$I" ]; then
+            if [ ! -w $I ]; then
+                echo -e "HTTP/1.1 503 Service Unavailable\r\n"
+                echo -e "Content-Type: Content-Type: text/plain\r\n"
+                echo -e "\r\n"
+                echo -e "Cannot write to $I\r\n"
+                echo -e "\r\n"
+                exit 1
+            fi
+        fi
+    done
 }
 return_ok()
 {
