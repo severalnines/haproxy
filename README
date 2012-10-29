@@ -17,6 +17,21 @@ on an ubuntu/debian platform. For MySQL Cluster on redhat/centos it would look l
 ./install-haproxy.sh 10.0.1.11 rhel mysqlcluster
 
 
+** SSH:
+
+*** IMPORTANT *************************************
+Make sure you can SSH to $LB_HOST without password:
+   ssh $USER@$LB_HOST
+If that is not possible do:
+   cd ..
+   ./shared-ssh-keys.sh $LB_HOST
+Then try to install again. You must also setup 
+sudo if you are not running as root:
+see "sudo" in the artice:
+ http://support.severalnines.com/entries/20614858-server-requirements-on-premise-amis-other-images
+
+
+
 ** Files:
 mysqlchk.sh.mysqlcluster - script to check if the mysql server is up and running (for MySQL Cluster)
 mysqlchk.sh.galera - script to check if the mysql server is up and running (for Galera)

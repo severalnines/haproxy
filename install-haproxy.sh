@@ -17,10 +17,11 @@ MYSQL_USERNAME="cmon"
 MYSQL_BINDIR=""
 CLUSTER_ID=1
 CMON_DB='cmon'
-
+SUDO=$SUDO
 
 if [ `whoami` = "root" ]; then
     IDENTITY="-t $IDENTITY"
+    SUDO=""
 fi
 SUFFIX="1"
 #### CHANGE THE FOLLOWING PARAMS IF YOU WANT
@@ -47,6 +48,16 @@ fi
 
 PKG_MGR=""
 
+echo "*** IMPORTANT *************************************"
+echo "Make sure you can SSH to $LB_HOST without password:"
+echo "   ssh $USER@$LB_HOST"
+echo "If that is not possible do:"
+echo "   cd .."
+echo "   ./shared-ssh-keys.sh $LB_HOST"
+echo "Then try to install again."
+echo "Also check that sudo on $LB_HOST can execute without"
+echo "passwords. See README for more information"
+echo "***************************************************"
 
 case $OS in
 	rhel)
@@ -135,7 +146,7 @@ do
        exit
   fi 
   remote_cmd2 $h  "sed  -i  '/mysqlchk        9200\/tcp/d' /etc/services"
-  remote_cmd $h "echo \"mysqlchk        9200/tcp\" | sudo tee --append /etc/services"
+  remote_cmd $h "echo \"mysqlchk        9200/tcp\" | $SUDO tee --append /etc/services"
   remote_copy mysqlchk.sh $h /tmp 
   remote_cmd $h "mv /tmp/mysqlchk.sh /usr/local/bin"
   remote_cmd $h "chmod 777 /usr/local/bin/mysqlchk.sh"
@@ -186,23 +197,23 @@ echo ""
 echo "** Tuning Network **"
 echo ""
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.ip_nonlocal_bind.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.ip_nonlocal_bind=1\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.ip_nonlocal_bind=1\" | $SUDO tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_tw_reuse.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_tw_reuse=1\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_tw_reuse=1\" | $SUDO tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.ip_local_port_range.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.ip_local_port_range = 1024 65023\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.ip_local_port_range = 1024 65023\" | $SUDO tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_max_syn_backlog.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_syn_backlog=40000\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_syn_backlog=40000\" | $SUDO tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_max_tw_buckets.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_tw_buckets=400000\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_tw_buckets=400000\" | $SUDO tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_max_orphans.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_orphans=60000\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_orphans=60000\" | $SUDO tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_synack_retries.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_synack_retries=3\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_synack_retries=3\" | $SUDO tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.core.somaxconn.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.core.somaxconn=40000\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.core.somaxconn=40000\" | $SUDO tee --append /etc/sysctl.conf"
 remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_fin_timeout.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_fin_timeout = 5\" | sudo tee --append /etc/sysctl.conf"
+remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_fin_timeout = 5\" | $SUDO tee --append /etc/sysctl.conf"
 
 
 x=`remote_getreply $LB_HOST "curl ifconfig.me 2>/dev/null"`
