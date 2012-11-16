@@ -63,10 +63,12 @@ case $OS in
 	rhel|redhat)
         PKG_MGR="yum install -y "
 	PHP_CURL="php-curl"
+	OS=rhel
 	;;
 	debian|ubuntu)
         PKG_MGR="apt-get install -y "
 	PHP_CURL="php5-curl"
+	OS=debian
 	;;
 	*)
 	echo "OS $OS not supported"
