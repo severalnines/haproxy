@@ -60,7 +60,7 @@ echo "passwords. See README for more information"
 echo "***************************************************"
 
 case $OS in
-	rhel)
+	rhel|redhat)
         PKG_MGR="yum install -y "
 	PHP_CURL="php-curl"
 	;;
@@ -142,8 +142,8 @@ echo "*************************************************************"
 for h in $hostnames 
 do
   if [ "$h" = "$LB_HOST" ]; then
-       echo "ERROR: Trying to install HaProxy on a database host"
-       exit
+       echo "ERROR: Trying to install HaProxy on a database host is prohibited."
+       exit 1
   fi 
   remote_cmd2 $h  "sed  -i  '/mysqlchk        9200\/tcp/d' /etc/services"
   remote_cmd $h "echo \"mysqlchk        9200/tcp\" | $SUDO tee --append /etc/services"
