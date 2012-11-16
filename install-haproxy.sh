@@ -17,7 +17,7 @@ MYSQL_USERNAME="cmon"
 MYSQL_BINDIR=""
 CLUSTER_ID=1
 CMON_DB='cmon'
-SUDO=$SUDO
+SUDO="sudo"
 
 if [ `whoami` = "root" ]; then
     IDENTITY="-t $IDENTITY"
