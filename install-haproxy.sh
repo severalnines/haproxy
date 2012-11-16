@@ -233,7 +233,7 @@ if [ $CNT -eq 0 ]; then
     fi
 fi
 
-QUERY="REPLACE INTO haproxy_server(cid, lb_host,lb_name,lb_port,lb_admin,lb_password,server_addr) VALUES ($CLUSTER_ID, '$LB_HOST','$LB_NAME', '$LB_ADMIN_PORT', '$LB_ADMIN_USER', '$LB_ADMIN_PASSWORD', '$x')"
+QUERY="REPLACE INTO haproxy_server(cid, lb_host,lb_name,lb_port,lb_admin,lb_password,server_addr) VALUES ($CLUSTER_ID, '$LB_HOST','$LB_NAME', '$LB_ADMIN_PORT', '$LB_ADMIN_USER', '$LB_ADMIN_PASSWORD', '$LB_HOST')"
 $MYSQL_BINDIR/mysql --host=$cmon_monitor --port=$MYSQL_PORT --user=cmon --password=$cmon_password --database=$CMON_DB -e "$QUERY"
 
 
@@ -251,7 +251,7 @@ echo ""
 echo "** Reboot is needed of $LB_HOST for network settings to take effect! **"
 echo ""
 
-echo "FIREWALL: To access Haproxy within ClusterControl, you should allow the clustercontrol server to connect to $x on port 9600"
+echo "FIREWALL: To access Haproxy within ClusterControl, you should allow the clustercontrol server to connect to $x on port 9600, and HaProxy must be able to communicate on port 9200 with the MySQL Servers."
 echo "**The admin interface is on http://${LB_HOST}:9600 **"
 echo ""
 echo "**The admin interface is on http://${LB_HOST}:9600 **"
