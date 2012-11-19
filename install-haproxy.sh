@@ -177,8 +177,8 @@ echo "*************************************************************"
 if [ $OS = "rhel" ]; then
    remote_cmd2 $LB_HOST "$EPEL"
 fi
+$PKG_MGR $PHP_CURL
 remote_cmd $LB_HOST "$PKG_MGR haproxy"
-remote_cmd $LB_HOST "$PKG_MGR $PHP_CURL"
 remote_copy ${PREFIX}_${LB_NAME}_haproxy.cfg $LB_HOST /tmp 
 remote_cmd $LB_HOST "rm -f /etc/haproxy/haproxy.cfg"
 remote_cmd $LB_HOST "mv /tmp/${PREFIX}_${LB_NAME}_haproxy.cfg /etc/haproxy/haproxy.cfg"
@@ -250,7 +250,6 @@ fi
 echo ""
 echo "** Reboot is needed of $LB_HOST for network settings to take effect! **"
 echo ""
-
 echo "FIREWALL: To access Haproxy within ClusterControl, you should allow the clustercontrol server to connect to $x on port 9600, and HaProxy must be able to communicate on port 9200 with the MySQL Servers."
 echo "**The admin interface is on http://${LB_HOST}:9600 **"
 echo ""
