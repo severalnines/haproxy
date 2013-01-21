@@ -1,3 +1,4 @@
+#!/bin/bash
 # All files in this package is subject to the GPL v2 license
 # More information is in the COPYING file in the top directory of this package.
 # Copyright (C) 2011 Severalnines
@@ -5,7 +6,7 @@
 # Also see CREDITS, many thanks to Timothy Der (randomorzero.wordpress.com)
 # for the work on the makecfg, mysqlckk, and haproxy.cfg.tmpl
 
-#!/bin/bash
+
 source ../.s9s/config
 source ../.s9s/help_func
 
