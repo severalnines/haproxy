@@ -10,12 +10,14 @@ git clone git@github.com:severalnines/haproxy.git
 
 s9s-galera-2.1.0/mysql/scripts/install/haproxy
 cd haproxy
-./install-haproxy.sh 10.0.1.11 debian galera
+bash ./install-haproxy.sh 10.0.1.11 debian galera
 
 The above example installs HaProxy on 10.0.11, using galera 
 on an ubuntu/debian platform. For MySQL Cluster on redhat/centos it would look like:
-./install-haproxy.sh 10.0.1.11 rhel mysqlcluster
+bash ./install-haproxy.sh 10.0.1.11 rhel mysqlcluster
 
+
+(running with 'sh install...'  will not work.)
 
 ** SSH:
 
