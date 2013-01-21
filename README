@@ -16,8 +16,10 @@ The above example installs HaProxy on 10.0.11, using galera
 on an ubuntu/debian platform. For MySQL Cluster on redhat/centos it would look like:
 bash ./install-haproxy.sh 10.0.1.11 rhel mysqlcluster
 
+NOTE: only tested with bash shell, and if you run with:
+sh install-haproxy...
+it won't work.
 
-(running with 'sh install...'  will not work.)
 
 ** SSH:
 
