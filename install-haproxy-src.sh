@@ -17,12 +17,16 @@ MYSQL_USERNAME="cmon"
 MYSQL_BINDIR=""
 CLUSTER_ID=1
 CMON_DB='cmon'
-SUDO="sudo"
+
+if [ -z "${SUDO}" ]; then
+   SUDO="sudo"
+fi
 
 if [ `whoami` = "root" ]; then
     IDENTITY="-t $IDENTITY"
     SUDO=""
 fi
+
 SUFFIX="1"
 #### CHANGE THE FOLLOWING PARAMS IF YOU WANT
 HAPROXY_MYSQL_LISTEN_PORT="33306"
@@ -122,9 +126,9 @@ echo "Using hostnames $hostnames"
 echo "Use the $OS haproxy template:"
 echo "cp haproxy.cfg.tmpl.$OS haproxy.cfg.tmpl"
 cp haproxy.cfg.tmpl.$OS haproxy.cfg.tmpl
-sed -i "s#ADMIN_PASSWORD#$LB_ADMIN_PASSWORD#g" haproxy.cfg.tmpl
-sed -i "s#ADMIN_USER#$LB_ADMIN_USER#g" haproxy.cfg.tmpl
-sed -i "s#ADMIN_PORT#$LB_ADMIN_PORT#g" haproxy.cfg.tmpl
+sed -i.bak "s#ADMIN_PASSWORD#$LB_ADMIN_PASSWORD#g" haproxy.cfg.tmpl
+sed -i.bak "s#ADMIN_USER#$LB_ADMIN_USER#g" haproxy.cfg.tmpl
+sed -i.bak "s#ADMIN_PORT#$LB_ADMIN_PORT#g" haproxy.cfg.tmpl
 
 echo "Use the $CLUSTER mysqlchk template:"
 echo "cp mysqlchk.sh.$CLUSTER mysqlchk.sh"
@@ -135,10 +139,10 @@ cp mysqlchk.sh.$CLUSTER mysqlchk.sh
 
 # Remove previous backend file and generate a new one
 rm ${PREFIX}*.backend
-sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$MYSQL_PASSWORD\"#g" mysqlchk.sh
-sed -i "s#MYSQL_USERNAME=.*#MYSQL_USERNAME=\"$MYSQL_USERNAME\"#g" mysqlchk.sh
-sed -i "s#MYSQL_PORT=.*#MYSQL_PORT=\"$MYSQL_PORT\"#g" mysqlchk.sh
-sed -i "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BINDIR/mysql\"#g" mysqlchk.sh
+sed -i.bak "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$MYSQL_PASSWORD\"#g" mysqlchk.sh
+sed -i.bak "s#MYSQL_USERNAME=.*#MYSQL_USERNAME=\"$MYSQL_USERNAME\"#g" mysqlchk.sh
+sed -i.bak "s#MYSQL_PORT=.*#MYSQL_PORT=\"$MYSQL_PORT\"#g" mysqlchk.sh
+sed -i.bak "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BINDIR/mysql\"#g" mysqlchk.sh
 
 echo "*************************************************************"
 echo "* installing xinetd, mysqlchk.sh, and creating backend file *"
@@ -149,8 +153,8 @@ do
        echo "ERROR: Trying to install HaProxy on a database host is prohibited."
        exit 1
   fi 
-  remote_cmd2 $h  "sed  -i  '/mysqlchk        9200\/tcp/d' /etc/services"
-  remote_cmd $h "echo \"mysqlchk        9200/tcp\" | $SUDO tee --append /etc/services"
+  remote_cmd2 $h  "sed  -i.bak  '/mysqlchk        9200\/tcp/d' /etc/services"
+  remote_cmd $h "/bin/sh -c 'echo \"mysqlchk        9200/tcp\" >>/etc/services'"
   remote_copy mysqlchk.sh $h /tmp 
   remote_cmd $h "mv /tmp/mysqlchk.sh /usr/local/bin"
   remote_cmd $h "chmod 777 /usr/local/bin/mysqlchk.sh"
@@ -179,50 +183,38 @@ echo "*************************************************************"
 if [ $OS = "rhel" ]; then
    remote_cmd2 $LB_HOST "$EPEL"
 fi
-$PKG_MGR $PHP_CURL
-remote_cmd $LB_HOST "$PKG_MGR haproxy"
+$SUDO $PKG_MGR $PHP_CURL
 remote_cmd $LB_HOST "wget -O/tmp/haproxy-1.4.22.tar.gz  http://haproxy.1wt.eu/download/1.4/src/haproxy-1.4.22.tar.gz"
-remote_cmd $LB_HOST "tar xvfz /tmp/haproxy-1.4.22.tar.gz -C/tmp/"
+remote_cmd $LB_HOST "tar xvfz /tmp/haproxy-1.4.22.tar.gz -C /tmp/"
 remote_cmd $LB_HOST "$PKG_MGR $BUILD"
-remote_cmd2 $LB_HOST "killall -9 haproxy"
-remote_cmd $LB_HOST "cd /tmp/haproxy-1.4.22 && make TARGET=linux26 && cp haproxy /usr/sbin/"
+remote_cmd2 $LB_HOST "killall -q  -9 haproxy"
+remote_cmd $LB_HOST "sh -c 'cd /tmp/haproxy-1.4.22 && make TARGET=linux26 && cp haproxy /usr/sbin/'"
 remote_copy ${PREFIX}_${LB_NAME}_haproxy.cfg $LB_HOST /tmp 
 remote_cmd $LB_HOST "rm -f /etc/haproxy/haproxy.cfg"
+remote_cmd2 $LB_HOST "mkdir -p /etc/haproxy/"
 remote_cmd $LB_HOST "mv /tmp/${PREFIX}_${LB_NAME}_haproxy.cfg /etc/haproxy/haproxy.cfg"
-#remote_cmd $LB_HOST "/usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid"
 remote_cmd $LB_HOST "/usr/sbin/haproxy ${HAPROXY_OPTS}"
-echo ""
-echo "** Adding init.d/haproxy auto start**"
-echo ""
-
-if [ $OS = "rhel" ]; then
-      remote_cmd $LB_HOST "/sbin/chkconfig --add haproxy"
-      remote_cmd $LB_HOST "/sbin/chkconfig haproxy on"
-else
-      remote_cmd $LB_HOST "sed -i 's#ENABLED=.*#ENABLED=1#g' /etc/default/haproxy"
-      remote_cmd $LB_HOST "/usr/sbin/update-rc.d haproxy defaults"
-fi
 echo ""
 echo "** Tuning Network **"
 echo ""
-remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.ip_nonlocal_bind.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.ip_nonlocal_bind=1\" | $SUDO tee --append /etc/sysctl.conf"
-remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_tw_reuse.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_tw_reuse=1\" | $SUDO tee --append /etc/sysctl.conf"
-remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.ip_local_port_range.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.ip_local_port_range = 1024 65023\" | $SUDO tee --append /etc/sysctl.conf"
-remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_max_syn_backlog.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_syn_backlog=40000\" | $SUDO tee --append /etc/sysctl.conf"
-remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_max_tw_buckets.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_tw_buckets=400000\" | $SUDO tee --append /etc/sysctl.conf"
-remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_max_orphans.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_max_orphans=60000\" | $SUDO tee --append /etc/sysctl.conf"
-remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_synack_retries.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_synack_retries=3\" | $SUDO tee --append /etc/sysctl.conf"
-remote_cmd2 $LB_HOST "sed  -i  'net.core.somaxconn.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.core.somaxconn=40000\" | $SUDO tee --append /etc/sysctl.conf"
-remote_cmd2 $LB_HOST "sed  -i  'net.ipv4.tcp_fin_timeout.*/d' /etc/sysctl.conf"
-remote_cmd $LB_HOST  "echo \"net.ipv4.tcp_fin_timeout = 5\" | $SUDO tee --append /etc/sysctl.conf"
+remote_cmd2 $LB_HOST "sed  -i.bak  '/net.ipv4.ip_nonlocal_bind.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "/bin/sh -c 'echo \"net.ipv4.ip_nonlocal_bind=1\" >> /etc/sysctl.conf'"
+remote_cmd2 $LB_HOST "sed  -i.bak  '/net.ipv4.tcp_tw_reuse.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "/bin/sh -c 'echo \"net.ipv4.tcp_tw_reuse=1\" >> /etc/sysctl.conf'"
+remote_cmd2 $LB_HOST "sed  -i.bak  '/net.ipv4.ip_local_port_range.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "/bin/sh -c 'echo \"net.ipv4.ip_local_port_range = 1024 65023\" >> /etc/sysctl.conf'"
+remote_cmd2 $LB_HOST "sed  -i.bak  '/net.ipv4.tcp_max_syn_backlog.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "/bin/sh -c 'echo \"net.ipv4.tcp_max_syn_backlog=40000\" >> /etc/sysctl.conf'"
+remote_cmd2 $LB_HOST "sed  -i.bak  '/net.ipv4.tcp_max_tw_buckets.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "/bin/sh -c 'echo \"net.ipv4.tcp_max_tw_buckets=400000\" >> /etc/sysctl.conf'"
+remote_cmd2 $LB_HOST "sed  -i.bak  '/net.ipv4.tcp_max_orphans.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "/bin/sh -c 'echo \"net.ipv4.tcp_max_orphans=60000\" >> /etc/sysctl.conf'"
+remote_cmd2 $LB_HOST "sed  -i.bak  '/net.ipv4.tcp_synack_retries.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "/bin/sh -c 'echo \"net.ipv4.tcp_synack_retries=3\" >> /etc/sysctl.conf'"
+remote_cmd2 $LB_HOST "sed  -i.bak  '/net.core.somaxconn.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "/bin/sh -c 'echo \"net.core.somaxconn=40000\" >> /etc/sysctl.conf'"
+remote_cmd2 $LB_HOST "sed  -i.bak  '/net.ipv4.tcp_fin_timeout.*/d' /etc/sysctl.conf"
+remote_cmd $LB_HOST  "/bin/sh -c 'echo \"net.ipv4.tcp_fin_timeout = 5\" >> /etc/sysctl.conf'"
 
 
 x=`remote_getreply $LB_HOST "curl ifconfig.me 2>/dev/null"`
