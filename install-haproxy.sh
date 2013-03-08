@@ -188,7 +188,7 @@ echo "*************************************************************"
 echo "* Installing haproxy on $LB_HOST                            *"
 echo "*************************************************************"
 
-if [ $OS = "rhel" ] || [ $OS = "centos6" ]; then
+if [ $OS = "rhel" l] || [ $OS = "centos6" ]; then
    remote_cmd2 $LB_HOST "$EPEL"
 fi
 $PKG_MGR2 $PHP_CURL
