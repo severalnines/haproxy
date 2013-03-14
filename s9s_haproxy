@@ -1,0 +1,1250 @@
+#!/bin/bash
+
+# All files in this package is subject to the GPL v2 license
+# More information is in the COPYING file in the top directory of this package.
+# Copyright (C) 2011 Severalnines
+
+# Also see CREDITS, many thanks to Timothy Der (randomorzero.wordpress.com)
+# for the work on the makecfg, mysqlckk, and haproxy.cfg.tmpl
+
+
+if [ ! -e /etc/cmon.cnf ] ; then
+    echo "Could not find /etc/cmon.cnf"
+    exit 1
+else
+    source /etc/cmon.cnf
+fi
+
+
+CMON_DB_HOST=127.0.0.1
+CMON_DB_PORT=$mysql_port
+CMON_USER=cmon
+CMON_DB_DB=cmon
+CMON_PASSWORD=$mysql_password
+MYSQL_BIN=$mysql_basedir/bin/mysql
+CONNECT_TIMEOUT=10
+CLUSTER_TYPE=$type
+MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
+LOCKFILE="/tmp/s9s_create.lock"
+OSUSER=$USER
+SUFFIX="1"
+PREFIX="s9s"
+JOBID=0
+HAPROXY_MYSQL_LISTEN_PORT="33306"
+HAPROXY_OPTS="-f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid)"
+LB_ADMIN_USER='admin'
+LB_ADMIN_PORT="9600"
+LB_ADMIN_PASSWORD='admin'
+
+if [ "$OSUSER" != "root" ]; then
+    echo "must be executed as 'root' or with 'sudo'"
+    exit 1
+fi
+ 
+TMPDIR=/Users/johan/tmp
+
+function log_job_message
+{    
+    MSG=$1
+    EXIT_CODE=$2
+    if [ -z "$EXIT_CODE" ]; then
+	EXIT_CODE=1
+    fi
+    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,\"$MSG\",$EXIT_CODE,now())"
+    if [ $JOBID -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    else
+	if [ $EXIT_CODE -ne 0 ]; then
+	    echo ""
+	    echo "Failed: $MSG"
+	fi
+    fi
+}
+
+function log_job
+{    
+    STATUS=$1
+    STATUS_TXT=$2
+    EXIT_CODE=$3
+    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CLUSTER_ID AND jobid=$JOBID"
+    if [ $JOBID -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    fi
+}
+
+
+
+function write_haproxy_cfg_tmpl_rhel()
+{
+cat << 'EOF' > $TMPDIR/haproxy.cfg.tmpl.rhel
+	global
+        pidfile /var/run/haproxy.pid
+        daemon
+        user nobody
+        group nobody
+        stats socket /tmp/haproxy.socket user nobody group nobody mode 600 level admin
+        node NODE_NAME
+        description NODE_DESC
+
+        #* Performance Tuning
+        maxconn 40000
+        spread-checks 3
+        quiet
+defaults
+        #log    global
+        mode    tcp
+        option  dontlognull
+        option tcp-smart-accept
+        option tcp-smart-connect
+        #option dontlog-normal
+        retries 3
+        option redispatch
+        maxconn 40000
+        timeout check   3500ms
+        timeout queue   3500ms
+        timeout connect 3500ms
+        timeout client  10000ms
+        timeout server  10000ms
+
+userlist STATSUSERS
+        group admin users admin
+        user ADMIN_USER insecure-password ADMIN_PASSWORD
+        user stats insecure-password PASSWORD
+
+listen admin_page 0.0.0.0:9600
+        mode http
+        stats enable
+        stats refresh 60s
+        stats uri /
+        acl AuthOkay_ReadOnly http_auth(STATSUSERS)
+        acl AuthOkay_Admin http_auth_group(STATSUSERS) admin
+        stats http-request auth realm admin_page unless AuthOkay_ReadOnly
+        #stats admin if AuthOkay_Admin
+EOF
+}	
+
+
+function write_haproxy_cfg_tmpl_debian()
+{
+cat << 'EOF' > $TMPDIR/haproxy.cfg.tmpl.debian
+global
+        pidfile /var/run/haproxy.pid
+        daemon
+        user www-data
+        group www-data
+        stats socket /tmp/haproxy.socket user www-data group www-data mode 600 level admin
+        node NODE_NAME
+        description NODE_DESC
+
+        #* Performance Tuning
+        maxconn 40000
+        spread-checks 3
+        quiet
+defaults
+        #log    global
+        mode    tcp
+        option  dontlognull
+        option tcp-smart-accept
+        option tcp-smart-connect
+        #option dontlog-normal
+        retries 3
+        option redispatch
+        maxconn 40000
+        timeout check   3500ms
+        timeout queue   3500ms
+        timeout connect 3500ms
+        timeout client  10000ms
+        timeout server  10000ms
+
+userlist STATSUSERS
+        group admin users admin
+        user ADMIN_USER insecure-password ADMIN_PASSWORD
+        user stats insecure-password USER_PASSWORD
+
+listen admin_page 0.0.0.0:9600
+        mode http
+        stats enable
+        stats refresh 60s
+        stats uri /
+        acl AuthOkay_ReadOnly http_auth(STATSUSERS)
+        acl AuthOkay_Admin http_auth_group(STATSUSERS) admin
+        stats http-request auth realm admin_page unless AuthOkay_ReadOnly
+        #stats admin if AuthOkay_Admin
+EOF
+}	
+
+function write_makecfg
+{
+cat << 'EOF' > $TMPDIR/makecfg.sh
+#!/bin/bash
+DC="$1"
+SUFFIX="$2"
+TMPDIR2="$3"
+TEMPLATE=${TMPDIR2}/haproxy.cfg.tmpl
+if ([ -z "$DC" ] || [ -z "$SUFFIX" ]); then
+        echo "specify PREFIX and SUFFIX: $0 <prefix> <suffix>; ie: $0 dt 1"
+        exit 1
+fi
+BACKENDFILES=`ls ${TMPDIR2}/${DC}_*.backend`
+if [ -z "$BACKENDFILES" ]; then
+    echo "No backend files found for $DC
+                *.backend files are lists of hostnames in files with naming convention  <prefix>_<port>_<name>.backend
+                example: dt_9906_production.backend
+                the list in the file is seperated by whitespace and each server can optionally have ',disabled' 
+                appended to its name to add it as disabled by default.
+                example: slave1 slave2,disabled"
+        exit 1
+fi
+NNAME="HAPROXY-$DC$SUFFIX"
+NDESC="$NNAME"
+if [ ! -f "$TEMPLATE" ]; then
+        echo "$TEMPLATE not found!"
+        exit 1;
+fi
+sed -e 's/NODE_NAME/'$NNAME'/g' -e 's/NODE_DESC/'$NDESC'/g'  "$TEMPLATE"
+for I in $BACKENDFILES; do
+        NAME=`basename $I .backend`
+        PORT=`echo $NAME | awk -F'_' '{ print $2 }'`
+        DESC=`echo $NAME | sed -e 's/^'$DC'_/'$DC$SUFFIX'_/'`
+echo -n "
+listen  "$DESC"
+        bind *:$PORT
+        mode tcp
+        timeout client  60000ms
+        timeout server  60000ms
+        balance leastconn 
+        option httpchk
+        option allbackups
+        default-server port 9200 inter 2s downinter 5s rise 3 fall 2 slowstart 60s maxconn 256 maxqueue 128 weight 100
+	"
+        for J in `cat $I`; do
+                SPLIT=(`echo $J | tr ',' ' '`);
+                STAT=""
+                if [ "${SPLIT[1]}" == "disabled" ]; then
+                        STAT="disabled"
+                fi
+                echo -e "        server ${SPLIT[0]} ${SPLIT[0]}:3306 check $STAT"
+        done
+done
+exit
+EOF
+chmod u+x $TMPDIR/makecfg.sh
+}
+
+function write_mysqlchk_galera
+{
+cat << 'EOF' > $TMPDIR/mysqlchk.sh.galera
+#!/bin/bash
+#
+# This script checks if a mysql server is healthy running on localhost. It will
+# return:
+# "HTTP/1.x 200 OK\r" (if mysql is running smoothly)
+# - OR -
+# "HTTP/1.x 500 Internal Server Error\r" (else)
+#
+# The purpose of this script is make haproxy capable of monitoring mysql properly
+#
+
+MYSQL_HOST="127.0.0.1"
+MYSQL_PORT=$MYSQL_PORT
+MYSQL_USERNAME="cmon"
+MYSQL_PASSWORD=$CMON_PASSWORD
+MYSQL_OPTS="-N -q -A"
+TMP_FILE="/dev/shm/mysqlchk.$$.out"
+ERR_FILE="/dev/shm/mysqlchk.$$.err"
+FORCE_FAIL="/dev/shm/proxyoff"
+MYSQL_BIN=$MYSQL_BIN
+CHECK_QUERY="show global status where variable_name='wsrep_local_state'"
+preflight_check()
+{
+    for I in "$TMP_FILE" "$ERR_FILE"; do
+        if [ -f "$I" ]; then
+            if [ ! -w $I ]; then
+                echo -e "HTTP/1.1 503 Service Unavailable\r\n"
+                echo -e "Content-Type: Content-Type: text/plain\r\n"
+                echo -e "\r\n"
+                echo -e "Cannot write to $I\r\n"
+                echo -e "\r\n"
+                exit 1
+            fi
+        fi
+    done
+}
+return_ok()
+{
+    echo -e "HTTP/1.1 200 OK\r\n"
+    echo -e "Content-Type: text/html\r\n"
+    echo -e "Content-Length: 43\r\n"
+    echo -e "\r\n"
+    echo -e "<html><body>MySQL is running.</body></html>\r\n"
+    echo -e "\r\n"
+    rm $ERR_FILE $TMP_FILE
+    exit 0
+}
+return_fail()
+{
+    echo -e "HTTP/1.1 503 Service Unavailable\r\n"
+    echo -e "Content-Type: text/html\r\n"
+    echo -e "Content-Length: 42\r\n"
+    echo -e "\r\n"
+    echo -e "<html><body>MySQL is *down*.</body></html>\r\n"
+    sed -e 's/\n$/\r\n/' $ERR_FILE
+    echo -e "\r\n"
+    rm $ERR_FILE $TMP_FILE
+    exit 1
+}
+preflight_check
+if [ -f "$FORCE_FAIL" ]; then
+        echo "$FORCE_FAIL found" > $ERR_FILE
+        return_fail;
+fi
+$MYSQL_BIN $MYSQL_OPTS --host=$MYSQL_HOST --port=$MYSQL_PORT --user=$MYSQL_USERNAME --password=$MYSQL_PASSWORD -e "$CHECK_QUERY" > $TMP_FILE 2> $ERR_FILE
+if [ $? -ne 0 ]; then
+        return_fail;
+fi
+status=`cat  $TMP_FILE | awk '{print $2;}'`
+
+if [ $status -ne 4 ]; then
+   return_fail;
+fi
+
+return_ok;
+
+EOF
+
+}
+
+
+function remote_copy()
+{
+   srcfile=$1
+   desthost=$2
+   destfile=$3
+   printf "%-4s: Copying '%s' " "$desthost" "$srcfile"
+   scp $SSH_OPTS2 $srcfile $SSH_USER@$desthost:$destfile >> $HOME/s9s_deploy.log  2>/dev/null
+   if [ $? -eq 0 ]; then
+      log_job_message "copying file $srcfile --> $desthost:$destfile" 0
+      printf "\033[32m[ok]\033[0m\n"
+      return 0
+   else
+      log_job_message "copying file $srcfile --> $desthost:$destfile" 1
+      log_job 'FAILED' 's9s_haproxy failed' 1
+      printf "\033[31m[failed]\033[0m\n"
+      exit 1
+   fi
+}
+
+function remote_cmdx()
+{
+   desthost=$1
+   xcommand=$2
+   printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
+   ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "
+   if [ $? -eq 0 ]; then
+      log_job_message "$desthost: Executed $xcommand" 0
+      printf "\033[32m[ok]\033[0m\n"
+      return 0
+   else
+      log_job_message "command failed: $xcommand" 1
+      log_job 'FAILED' 'backup failed' 1
+      printf "\033[31m[failed]\033[0m\n"
+      exit 1
+   fi
+}
+
+function remote_cmd_nofail()
+{
+   desthost=$1
+   xcommand=$2
+   printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
+   ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "  >> $HOME/s9s_deploy.log 2>&1
+   ret=$?
+   log_job_message "$desthost: Executed $xcommand" 0
+   printf "\033[32m[ok]\033[0m\n"
+   return $ret
+}
+
+function remote_cmd()
+{
+   desthost=$1
+   xcommand=$2
+   MAX_RETRIES=1
+   printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
+   retry=0
+   while [ $retry -lt $MAX_RETRIES ]; 
+   do
+      x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1  >> $HOME/s9s_deploy.log`
+      if [ $? -eq 0 ]; then
+	  log_job_message "$desthost: Executed $xcommand" 0
+          printf "\033[32m[ok]\033[0m\n"
+          return 0
+      fi
+      retry=`expr $retry + 1`
+      printf "\033[31m[failed: retrying ${retry}/${MAX_RETRIES}]\033[0m\n"
+      ssh -q $SSH_OPTS $SSH_USER@$desthost " sync " 2>&1  >> $HOME/s9s_deploy.log
+      sleep 1
+   done
+   log_job_message "FAILED: ${desthost}@${xcommand}" 1
+   printf "\033[31m[failed]\033[0m\n"
+   echo $x
+   echo 'The following command failed:'
+   echo "ssh -q $SSH_OPTS $SSH_USER@$desthost \" $xcommand \""
+   echo 'Try running the command on the line above again, contact http://support.severalnines.com/ticket/new, attach the output from deploy.sh and the error from running the command to the Support issue.'
+   exit 1
+}
+
+
+function remote_cmd3()
+{
+   desthost=$1
+   xcommand=$2
+   printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
+   ssh -nq -tt $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "   >> $HOME/s9s_deploy.log 2>&1
+   if [ $? -eq 0 ]; then
+       log_job_message "$desthost: Executed $xcommand" 0
+       printf "\033[32m[ok]\033[0m\n"
+       return 0
+   else
+       printf "\033[31m[failed]\033[0m\n"
+       log_job_message "FAILED: ${desthost}@${xcommand}" 1
+       exit 1
+   fi
+}
+
+function write_mysqlchk_mc
+{
+cat << 'EOF' > $TMPDIR/mysqlchk.sh.mysqlcluster
+#!/bin/bash
+#
+# This script checks if a mysql server is healthy running on localhost. It will
+# return:
+# "HTTP/1.x 200 OK\r" (if mysql is running smoothly)
+# - OR -
+# "HTTP/1.x 500 Internal Server Error\r" (else)
+#
+# The purpose of this script is make haproxy capable of monitoring mysql properly
+#
+
+MYSQL_HOST="127.0.0.1"
+MYSQL_PORT=$MYSQL_PORT
+MYSQL_USERNAME="cmon"
+MYSQL_PASSWORD=$CMON_PASSWORD
+MYSQL_OPTS="-N -q -A"
+TMP_FILE="/dev/shm/mysqlchk.$$.out"
+ERR_FILE="/dev/shm/mysqlchk.$$.err"
+FORCE_FAIL="/dev/shm/proxyoff"
+MYSQL_BIN=$MYSQL_BIN
+CHECK_QUERY="select 1"
+preflight_check()
+{
+    for I in "$TMP_FILE" "$ERR_FILE"; do
+        if [ -f "$I" ]; then
+            if [ ! -w $I ]; then
+                echo -e "HTTP/1.1 503 Service Unavailable\r\n"
+                echo -e "Content-Type: Content-Type: text/plain\r\n"
+                echo -e "\r\n"
+                echo -e "Cannot write to $I\r\n"
+                echo -e "\r\n"
+                exit 1
+            fi
+        fi
+    done
+}
+return_ok()
+{
+    echo -e "HTTP/1.1 200 OK\r\n"
+    echo -e "Content-Type: text/html\r\n"
+    echo -e "Content-Length: 43\r\n"
+    echo -e "\r\n"
+    echo -e "<html><body>MySQL is running.</body></html>\r\n"
+    echo -e "\r\n"
+    rm $ERR_FILE $TMP_FILE
+    exit 0
+}
+return_fail()
+{
+    echo -e "HTTP/1.1 503 Service Unavailable\r\n"
+    echo -e "Content-Type: text/html\r\n"
+    echo -e "Content-Length: 42\r\n"
+    echo -e "\r\n"
+    echo -e "<html><body>MySQL is *down*.</body></html>\r\n"
+    sed -e 's/\n$/\r\n/' $ERR_FILE
+    echo -e "\r\n"
+    rm $ERR_FILE $TMP_FILE
+    exit 1
+}
+preflight_check
+if [ -f "$FORCE_FAIL" ]; then
+        echo "$FORCE_FAIL found" > $ERR_FILE
+        return_fail;
+fi
+$MYSQL_BIN $MYSQL_OPTS --host=$MYSQL_HOST --port=$MYSQL_PORT --user=$MYSQL_USERNAME --password=$MYSQL_PASSWORD -e "$CHECK_QUERY" > $TMP_FILE 2> $ERR_FILE
+if [ $? -ne 0 ]; then
+        return_fail;
+fi
+return_ok;
+
+
+EOF
+
+}
+
+
+function write_xinetd
+{
+cat << 'EOF' > $TMPDIR/xinetd_mysqlchk
+# default: on
+# description: mysqlchk
+service mysqlchk
+{
+        flags           = REUSE
+        socket_type     = stream
+        port            = 9200
+        wait            = no
+        user            = nobody
+        server          = /usr/local/bin/mysqlchk.sh
+        log_on_failure  += USERID
+        disable         = no
+#        only_from       = 0.0.0.0/0
+# recommended to put the IPs that need
+# to connect exclusively (security purposes)
+        per_source      = UNLIMITED
+# Recently added (May 20, 2010)
+# Prevents the system from complaining
+# about having too many connections open from
+# the same IP. More info:
+# http://www.linuxfocus.org/English/November2000/article175.shtml
+}
+EOF
+}
+
+function load_opts
+{
+    local CLUSTER_ID=$1
+    echo "load opts $CLUSTER_ID"
+    OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID"`
+    MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID"`
+    SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID"`
+    SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID"`
+    TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
+    S9S_TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
+    OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID"`
+    SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID"`
+
+    if [ $? -ne 0 ]; then 
+        log_job_message "load opts failed"
+        exit 1
+    fi
+
+    if [ -z "$MYSQL_PORT" ]; then 
+        log_job_message "MYSQL_PORT not set in Cluster Settings"
+        exit 1
+    fi
+
+    if [ -z "$SSH_USER" ]; then 
+        log_job_message "SSH_USER not set in Cluster Settings"
+        exit 1
+    fi
+
+    if [ -z "$TMPDIR" ]; then 
+        log_job_message "STAGING_DIR not set in Cluster Settings"
+        exit 1
+    fi
+
+    if [ -z "$OS" ]; then 
+        log_job_message "OS not set in Cluster Settings"
+        exit 1
+    fi
+
+
+    SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
+    if [ "$SSH_IDENTITY" = "" ]; then
+	SSH_IDENTITY="-oIdentityFile=${OS_USER_HOME}/.ssh/id_rsa"
+    fi
+    SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+    SSH_OPTS2="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+    if [ "$SSH_USER" != "root" ]; then
+	SSH_OPTS="-t -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+	if [ -z "$SUDO" ]; then
+            SUDO=sudo
+	fi
+    fi
+    mkdir -p $TMPDIR/haproxy
+    TMPDIR=$TMPDIR/haproxy
+}
+
+function install_mysqlchk
+{
+    local h=$1
+    if [ "$h" = "$LB_HOSTNAME" ]; then
+        echo "ERROR: Trying to install HaProxy on a database host is prohibited."
+           exit 1
+    fi
+    remote_cmd $h "mkdir -p $S9S_TMPDIR"
+    remote_cmd $h "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
+    remote_cmd_nofail $h  "sed  -i  '/mysqlchk        9200\/tcp/d' /etc/services"
+    remote_cmd $h "sh -c 'echo \"mysqlchk        9200/tcp\" >> /etc/services'"
+    remote_copy $TMPDIR/mysqlchk.sh $h $S9S_TMPDIR
+    remote_cmd $h "mv $S9S_TMPDIR/mysqlchk.sh /usr/local/bin"
+    remote_cmd $h "chmod 777 /usr/local/bin/mysqlchk.sh"
+    remote_cmd $h "$PKG_MGR xinetd"
+    remote_copy $TMPDIR/xinetd_mysqlchk $h $S9S_TMPDIR
+    remote_cmd $h "mv $S9S_TMPDIR/xinetd_mysqlchk /etc/xinetd.d/mysqlchk"
+    remote_cmd $h "/etc/init.d/xinetd restart"
+    if [ $OS = "rhel" ] || [ $OS = "centos6" ]; then
+        remote_cmd $h "/sbin/chkconfig --add xinetd"
+    else
+        remote_cmd $h "/usr/sbin/update-rc.d xinetd defaults"
+    fi
+    echo $h >>  $TMPDIR/${PREFIX}_${HAPROXY_MYSQL_LISTEN_PORT}_${LB_NAME}.backend
+    echo "Configuration of $h completed "
+}
+
+function prepare
+{
+    write_haproxy_cfg_tmpl_rhel
+    write_haproxy_cfg_tmpl_debian
+    write_makecfg
+    write_mysqlchk_galera
+    write_mysqlchk_mc
+    write_xinetd
+
+}
+
+function install_haproxy
+{
+    LB_NODE_LIST=""
+    args=`getopt p:P:h:i:N:n:j:s $*`
+    set -- $args
+    for i
+    do
+        case "$i" in
+            -p)
+                CMON_PASSWORD="$2"; shift;
+                shift;;
+            -i)
+                CLUSTER_ID="$2"; shift;
+                shift;;
+            -h)
+                LB_HOSTNAME="$2"; shift;
+                shift;;
+            -n)
+                LB_NODE_LIST="$2"; shift;
+                shift;;
+            -s)
+                BUILD_FROM_SRC="1"; 
+                shift;;
+            -N)
+                LB_NAME="$2"; shift;
+                shift;;
+            -N)
+                LB_NAME="$2"; shift;
+                shift;;
+            -j)
+                JOBID="$2"; shift;
+                shift;;
+            --)
+                shift; break;;
+                esac
+    done
+
+    
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_haproxy --install -p  missing"
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_haproxy --install -i <cluster id>  missing"
+      exit 1
+    fi
+
+    if [ -z "$LB_HOSTNAME" ]; then
+        echo "s9s_haproxy --install  -h <loadbalancer host> missing"
+        exit 1
+    fi
+    
+    if [ -z "$LB_NAME" ]; then
+        LB_NAME="production"
+    fi
+
+    if [ -z "$JOBID" ]; then
+	JOBID=0
+    fi
+
+
+    load_opts $CLUSTER_ID
+    rm -rf $TMPDIR/haproxy/*
+    prepare
+
+    case $OS in
+        rhel|redhat)
+            PKG_MGR="yum -y install "
+            PKG_MGR2="yum -y install "
+            PHP_CURL="php-curl"
+	    BUILD="gcc make"
+	    CENTOS=`cat /etc/redhat-release  | grep -i centos |grep "6"`
+	    if [ -n "$CENTOS" ]; then
+		remote_cmd $LB_HOSTNAME "yum -y install centos-release-cr"
+		remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  's/enabled=1/enabled=0/g' /etc/yum.repos.d/CentOS-CR.repo"
+		PKG_MGR2="yum -y --enablerepo=cr install "
+		PKG_MGR="yum -y install "
+		PHP_CURL="php-curl"
+		OS=rhel
+	    else
+		OS=rhel
+	    fi
+            ;;
+	centos6)
+	    BUILD="gcc make"
+	    OS=centos6
+	    ;;	
+        debian|ubuntu)
+            PKG_MGR="apt-get install -y "
+            PKG_MGR2="apt-get install -y "
+            PHP_CURL="php5-curl"
+	    BUILD="gcc make"
+            OS=debian
+            ;;
+        *)
+        echo "OS $OS not supported"
+        exit
+        ;;
+    esac
+
+    case $CLUSTER_TYPE in
+        galera)
+        ;;
+        mysqlcluster)
+        ;;
+        *)
+        echo "Cluster $CLUSTER_TYPE not supported"
+        exit 1
+        ;;
+    esac
+
+    if [ -n "$LB_NODE_LIST" ]; then
+        ## TODO FIX IN LIST
+	QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and (h.hostname in ) and connected=1 and m.cid=$CLUSTER_ID"
+        hostnames=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
+    else
+	QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and connected=1 and m.cid=$CLUSTER_ID"
+        hostnames=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
+    fi
+
+    if [ -z "$hostnames" ]; then
+       echo "No hostnames found."
+       exit 1
+    fi
+
+    if [ "$hostnames" = "NULL" ]; then
+       echo "No hostnames found."
+       exit 1
+    fi
+
+    echo "cp $TMPDIR/haproxy.cfg.tmpl.$OS $TMPDIR/haproxy.cfg.tmpl"
+    cp $TMPDIR/haproxy.cfg.tmpl.$OS $TMPDIR/haproxy.cfg.tmpl
+    sed -i "s#ADMIN_PASSWORD#$LB_ADMIN_PASSWORD#g" $TMPDIR/haproxy.cfg.tmpl
+    sed -i "s#ADMIN_USER#$LB_ADMIN_USER#g" $TMPDIR/haproxy.cfg.tmpl
+    sed -i "s#ADMIN_PORT#$LB_ADMIN_PORT#g" $TMPDIR/haproxy.cfg.tmpl
+    cp $TMPDIR/mysqlchk.sh.$CLUSTER_TYPE $TMPDIR/mysqlchk.sh 
+
+
+    rm -rf  $TMPDIR/${PREFIX}*.backend  2>/dev/null
+    sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$CMON_PASSWORD\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_USERNAME=.*#MYSQL_USERNAME=\"cmon\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_PORT=.*#MYSQL_PORT=\"$CMON_DB_PORT\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BIN\"#g" $TMPDIR/mysqlchk.sh
+
+    
+    echo "*************************************************************"
+    echo "* installing xinetd, mysqlchk.sh, and creating backend file *"
+    echo "*************************************************************"
+    for h in $hostnames
+    do
+	install_mysqlchk $h
+    done
+
+
+    echo ""
+    echo "*************************************************************"
+    echo "* writing $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg               *"
+    echo "*************************************************************"
+    $TMPDIR/makecfg.sh $PREFIX $SUFFIX $TMPDIR > $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg
+    echo ""
+    echo "*************************************************************"
+    echo "* Installing haproxy on $LB_HOSTNAME                            *"
+    echo "*************************************************************"
+
+
+    if [ $OS = "rhel" ] || [ $OS = "centos6" ]; then
+	remote_cmd_nofail $LB_HOSTNAME "wget  --no-check-certificate --tries=5 -O ${S9S_TMPDIR}/epel-release-6-8.noarch.rpm  http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm"
+	remote_cmd_nofail $LB_HOSTNAME "rpm -Uvh --force ${S9S_TMPDIR}/epel-release-6-8.noarch.rpm"
+	remote_cmd_nofail $LB_HOSTNAME "rpm --import http://apt.sw.be/RPM-GPG-KEY.dag.txt"
+	remote_cmd_nofail $LB_HOSTNAME "rpm -Uvh http://packages.sw.be/rpmforge-release/rpmforge-release-0.5.2-2.el6.rf.x86_64.rpm"
+    fi
+    remote_cmd_nofail $LB_HOSTNAME "$PKG_MGR $PHP_CURL"
+    if [ -n "$BUILD_FROM_SRC" ]; then
+	remote_cmd $LB_HOSTNAME "wget -O/tmp/haproxy-1.4.22.tar.gz  http://haproxy.1wt.eu/download/1.4/src/haproxy-1.4.22.tar.gz"
+	remote_cmd $LB_HOSTNAME "tar xvfz /tmp/haproxy-1.4.22.tar.gz -C /tmp/"
+	remote_cmd $LB_HOSTNAME "$PKG_MGR $BUILD"
+	remote_cmd_nofail $LB_HOSTNAME "killall -q  -9 haproxy"
+	remote_cmd $LB_HOSTNAME "sh -c 'cd /tmp/haproxy-1.4.22 && make TARGET=linux26 && cp haproxy /usr/sbin/'"
+    else
+	remote_cmd $LB_HOSTNAME "$PKG_MGR2 haproxy"
+    fi
+    remote_copy $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg $LB_HOSTNAME /tmp
+    remote_cmd $LB_HOSTNAME "rm -f /etc/haproxy/haproxy.cfg"
+    remote_cmd $LB_HOSTNAME "mv /tmp/${PREFIX}_${LB_NAME}_haproxy.cfg /etc/haproxy/haproxy.cfg"
+    #remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid"                                                                                         
+    remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy ${HAPROXY_OPTS}"
+    if [ -z "$BUILD_FROM_SRC" ]; then
+	echo ""
+	echo "** Adding init.d/haproxy auto start**"
+	echo ""
+	
+	if [ $OS = "rhel" ] || [ $OS = "centos6"  ] ; then
+            remote_cmd $LB_HOSTNAME "/sbin/chkconfig --add haproxy"
+            remote_cmd $LB_HOSTNAME "/sbin/chkconfig haproxy on"
+	else
+            remote_cmd $LB_HOSTNAME "sed -i 's#ENABLED=.*#ENABLED=1#g' /etc/default/haproxy"
+            remote_cmd $LB_HOSTNAME "/usr/sbin/update-rc.d haproxy defaults"
+	fi
+    fi
+    echo ""
+    echo "** Tuning Network **"
+    echo ""
+
+    remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  '/net.ipv4.ip_nonlocal_bind.*/d' /etc/sysctl.conf"
+    remote_cmd $LB_HOSTNAME  "/bin/sh -c 'echo \"net.ipv4.ip_nonlocal_bind=1\" >> /etc/sysctl.conf'"
+    remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  '/net.ipv4.tcp_tw_reuse.*/d' /etc/sysctl.conf"
+    remote_cmd $LB_HOSTNAME  "/bin/sh -c 'echo \"net.ipv4.tcp_tw_reuse=1\" >> /etc/sysctl.conf'"
+    remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  '/net.ipv4.ip_local_port_range.*/d' /etc/sysctl.conf"
+    remote_cmd $LB_HOSTNAME  "/bin/sh -c 'echo \"net.ipv4.ip_local_port_range = 1024 65023\" >> /etc/sysctl.conf'"
+    remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  '/net.ipv4.tcp_max_syn_backlog.*/d' /etc/sysctl.conf"
+    remote_cmd $LB_HOSTNAME  "/bin/sh -c 'echo \"net.ipv4.tcp_max_syn_backlog=40000\" >> /etc/sysctl.conf'"
+    remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  '/net.ipv4.tcp_max_tw_buckets.*/d' /etc/sysctl.conf"
+    remote_cmd $LB_HOSTNAME  "/bin/sh -c 'echo \"net.ipv4.tcp_max_tw_buckets=400000\" >> /etc/sysctl.conf'"
+    remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  '/net.ipv4.tcp_max_orphans.*/d' /etc/sysctl.conf"
+    remote_cmd $LB_HOSTNAME  "/bin/sh -c 'echo \"net.ipv4.tcp_max_orphans=60000\" >> /etc/sysctl.conf'"
+    remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  '/net.ipv4.tcp_synack_retries.*/d' /etc/sysctl.conf"
+    remote_cmd $LB_HOSTNAME  "/bin/sh -c 'echo \"net.ipv4.tcp_synack_retries=3\" >> /etc/sysctl.conf'"
+    remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  '/net.core.somaxconn.*/d' /etc/sysctl.conf"
+    remote_cmd $LB_HOSTNAME  "/bin/sh -c 'echo \"net.core.somaxconn=40000\" >> /etc/sysctl.conf'"
+    remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  '/net.ipv4.tcp_fin_timeout.*/d' /etc/sysctl.conf"
+    remote_cmd $LB_HOSTNAME  "/bin/sh -c 'echo \"net.ipv4.tcp_fin_timeout = 5\" >> /etc/sysctl.conf'"
+    
+    QUERY="select count(column_name) from information_schema.columns where table_schema='cmon' and table_name='haproxy_server' and column_name='server_addr'"
+    CNT=`$MYSQL_BIN -A -B -N  -ucmon -p$CMON_PASSWORD --host=$CMON_DB_HOST --database=$CMON_DB_DB --port=${CMON_DB_PORT} -e "$QUERY" 2>&1`
+    if [ $CNT -eq 0 ]; then
+        QUERY="ALTER TABLE $CMON_DB.haproxy_server ADD COLUMN server_addr VARCHAR(255) DEFAULT ''"
+        $bindir/mysql -B -N  -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB -h$CMON_DB_HOST -P${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
+        if [  $? -ne 0 ]; then
+            log_job_message "Query failed: $QUERY"
+            echo ""
+            cat /tmp/err.log
+            exit 1
+        fi
+    fi
+
+    QUERY="REPLACE INTO haproxy_server(cid, lb_host,lb_name,lb_port,lb_admin,lb_password,server_addr) VALUES ($CLUSTER_ID, '$LB_HOSTNAME','$LB_NAME', '$LB_ADMIN_PORT', '$LB_ADMIN_USER', '$LB_ADMIN_PASSWORD', '$LB_HOSTNAME')"
+    $MYSQL_BIN --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"
+
+
+
+    QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port) VALUES($CLUSTER_ID, '$LB_HOSTNAME','/usr/sbin/haproxy', \"${HAPROXY_OPTS}\", \"/usr/sbin/haproxy ${HAPROXY_OPTS}\",'haproxy', $LB_ADMIN_PORT)"
+    $MYSQL_BIN -B -N  -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
+    if [  $? -ne 0 ]; then
+        log_job_message "Query failed: $QUERY"
+       echo ""
+       cat /tmp/err.log
+       exit 1
+    fi
+
+
+    echo ""
+    echo "** Reboot is recommended of $LB_HOSTNAME for network settings to take effect! **"
+    echo ""
+    echo "FIREWALL: To access Haproxy within ClusterControl, you should allow the clustercontrol server to connect to $x on port 9600, and HaProxy must be able to communicate on port 9200 with the MySQL Servers."
+    echo "**The admin interface is on http://${LB_HOSTNAME}:9600 **"
+    echo ""
+    echo "**The admin interface is on http://${LB_HOSTNAME}:9600 **"
+    echo "**Login with ${LB_ADMIN_USER}/${LB_ADMIN_PASSWORD}"
+    echo "**HAProxy listens on ${LB_HOSTNAME}:${HAPROXY_MYSQL_LISTEN_PORT} for mysql connections."
+    echo "**Don't forget to GRANT ${LB_HOSTNAME} on your mysql servers:"
+    echo "GRANT <privs> ON <db>.* TO '<user>'@'${LB_HOSTNAME}' IDENTIFIED BY '<password>'"
+    echo ""
+    exit 0
+
+}
+
+
+
+function delete_haproxy
+{
+    LB_NODE_LIST=""
+    args=`getopt p:s:P:h:i:N:n:j: $*`
+    set -- $args
+    for i
+    do
+        case "$i" in
+            -p)
+                CMON_PASSWORD="$2"; shift;
+                shift;;
+            -i)
+                CLUSTER_ID="$2"; shift;
+                shift;;
+            -h)
+                LB_HOSTNAME="$2"; shift;
+                shift;;
+            -n)
+                LB_NODE_LIST="$2"; shift;
+                shift;;
+            -N)
+                LB_NAME="$2"; shift;
+                shift;;
+            -N)
+                LB_NAME="$2"; shift;
+                shift;;
+            -j)
+                JOBID="$2"; shift;
+                shift;;
+            --)
+                shift; break;;
+                esac
+    done
+
+    
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_haproxy --install -p  missing"
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_haproxy --install -i <cluster id>  missing"
+      exit 1
+    fi
+
+    if [ -z "$LB_HOSTNAME" ]; then
+        echo "s9s_haproxy --install  -h <loadbalancer host> missing"
+        exit 1
+    fi
+    
+
+    if [ -z "$JOBID" ]; then
+	JOBID=0
+    fi
+
+
+    load_opts $CLUSTER_ID
+    rm -rf $TMPDIR/haproxy/*
+    prepare
+
+    case $OS in
+        rhel|redhat|centos6)
+            PKG_MGR="yum -y remove "
+            OS=rhel
+            ;;
+        debian|ubuntu)
+            PKG_MGR="apt-get -y remove "
+            OS=debian
+            ;;
+        *)
+        echo "OS $OS not supported"
+        exit
+        ;;
+    esac
+
+    case $CLUSTER_TYPE in
+        galera)
+        ;;
+        mysqlcluster)
+        ;;
+        *)
+        echo "Cluster $CLUSTER_TYPE not supported"
+        exit 1
+        ;;
+    esac
+
+
+    remote_cmd $LB_HOSTNAME "$PKG_MGR haproxy"
+    remote_cmd_nofail $LB_HOSTNAME "rm -f /etc/haproxy/haproxy.cfg"
+    remote_cmd_nofail $LB_HOSTNAME "killall -9 haproxy"
+    echo ""
+    echo "** Removing init.d/haproxy auto start**"
+    echo ""
+
+    if [ $OS = "rhel" ] || [ $OS = "centos6"  ] ; then
+          remote_cmd_nofail $LB_HOSTNAME "/sbin/chkconfig --del haproxy"
+          remote_cmd_nofail $LB_HOSTNAME "/sbin/chkconfig haproxy off"
+    else
+          remote_cmd_nofail $LB_HOSTNAME "sed -i 's#ENABLED=.*#ENABLED0=0#g' /etc/default/haproxy"
+          remote_cmd_nofail $LB_HOSTNAME "/usr/sbin/update-rc.d -f haproxy remove"
+    fi
+
+    QUERY="DELETE FROM haproxy_server WHERE cid=$CLUSTER_ID AND lb_host='$LB_HOSTNAME'"
+    $MYSQL_BIN --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"
+    
+    QUERY="DELETE FROM ext_proc WHERE cid=$CLUSTER_ID AND hostname='$LB_HOSTNAME' AND proc_name='haproxy'"
+    $MYSQL_BIN -B -N  -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
+    if [  $? -ne 0 ]; then
+        log_job_message "Query failed: $QUERY"
+       echo ""
+       cat /tmp/err.log
+       exit 1
+    fi
+    echo "Removed $LB_HOSTNAME"
+    echo ""
+    exit 0
+}
+
+
+
+function remove_node
+{
+    args=`getopt p:s:P:h:i:N:n:j: $*`
+    set -- $args
+    for i
+    do
+        case "$i" in
+            -p)
+                CMON_PASSWORD="$2"; shift;
+                shift;;
+            -i)
+                CLUSTER_ID="$2"; shift;
+                shift;;
+            -h)
+                LB_HOSTNAME="$2"; shift;
+                shift;;
+            -n)
+                NODE="$2"; shift;
+                shift;;
+            -N)
+                LB_NAME="$2"; shift;
+                shift;;
+            -j)
+                JOBID="$2"; shift;
+                shift;;
+            --)
+                shift; break;;
+                esac
+    done
+
+    
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_haproxy --remove-node -p  missing"
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_haproxy --remove-node -i <cluster id>  missing"
+      exit 1
+    fi
+
+    if [ -z "$LB_HOSTNAME" ]; then
+        echo "s9s_haproxy --remote-node  -h <loadbalancer host> missing"
+        exit 1
+    fi
+
+    if [ -z "$NODE" ]; then
+        echo "s9s_haproxy --remote-node  -n <serveraddr to remove from lb > missing"
+        exit 1
+    fi
+    
+    if [ -z "$LB_NAME" ]; then
+        LB_NAME="production"
+    fi
+
+    if [ -z "$JOBID" ]; then
+	JOBID=0
+    fi
+
+    load_opts $CLUSTER_ID
+    prepare
+
+    case $OS in
+        rhel|redhat)
+            PKG_MGR="yum install -y "
+            PHP_CURL="php-curl"
+            OS=rhel
+            ;;
+        debian|ubuntu)
+            PKG_MGR="apt-get install -y "
+            PHP_CURL="php5-curl"
+            OS=debian
+            ;;
+        *)
+        echo "OS $OS not supported"
+        exit
+        ;;
+    esac
+
+    case $CLUSTER_TYPE in
+        galera)
+        ;;
+        mysqlcluster)
+        ;;
+        *)
+        echo "Cluster $CLUSTER_TYPE not supported"
+        exit 1
+        ;;
+    esac
+
+    REMOVE_STR="server $NODE"
+    remote_cmd $LB_HOSTNAME "sed -i.bak '/$REMOVE_STR/d'  /etc/haproxy/haproxy.cfg"
+    remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy ${HAPROXY_OPTS}"    
+
+}
+
+function add_node
+{
+    args=`getopt p:s:P:h:i:N:n:j: $*`
+    set -- $args
+    for i
+    do
+        case "$i" in
+            -p)
+                CMON_PASSWORD="$2"; shift;
+                shift;;
+            -i)
+                CLUSTER_ID="$2"; shift;
+                shift;;
+            -h)
+                LB_HOSTNAME="$2"; shift;
+                shift;;
+            -n)
+                NODE="$2"; shift;
+                shift;;
+            -N)
+                LB_NAME="$2"; shift;
+                shift;;
+            -j)
+                JOBID="$2"; shift;
+                shift;;
+            --)
+                shift; break;;
+                esac
+    done
+
+    
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_haproxy --remove-node -p  missing"
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_haproxy --remove-node -i <cluster id>  missing"
+      exit 1
+    fi
+
+    if [ -z "$LB_HOSTNAME" ]; then
+        echo "s9s_haproxy --remote-node  -h <loadbalancer host> missing"
+        exit 1
+    fi
+
+    if [ -z "$NODE" ]; then
+        echo "s9s_haproxy --remote-node  -n <serveraddr to add to lb > missing"
+        exit 1
+    fi
+    
+    if [ -z "$LB_NAME" ]; then
+        LB_NAME="production"
+    fi
+
+    if [ -z "$JOBID" ]; then
+	JOBID=0
+    fi
+
+    load_opts $CLUSTER_ID
+    prepare
+
+    case $OS in
+        rhel|redhat)
+            OS=rhel
+            ;;
+        debian|ubuntu)
+            OS=debian
+            ;;
+        *)
+        echo "OS $OS not supported"
+        exit
+        ;;
+    esac
+
+    case $OS in
+        rhel|redhat)
+            PKG_MGR="yum install -y "
+            PHP_CURL="php-curl"
+            OS=rhel
+            ;;
+        debian|ubuntu)
+            PKG_MGR="apt-get install -y "
+            PHP_CURL="php5-curl"
+            OS=debian
+            ;;
+        *)
+        echo "OS $OS not supported"
+        exit
+        ;;
+    esac
+
+
+    case $CLUSTER_TYPE in
+        galera)
+        ;;
+        mysqlcluster)
+        ;;
+        *)
+        echo "Cluster $CLUSTER_TYPE not supported"
+        exit 1
+        ;;
+    esac
+    cp $TMPDIR/mysqlchk.sh.$CLUSTER_TYPE $TMPDIR/mysqlchk.sh 
+    sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$CMON_PASSWORD\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_USERNAME=.*#MYSQL_USERNAME=\"cmon\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_PORT=.*#MYSQL_PORT=\"$CMON_DB_PORT\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BIN\"#g" $TMPDIR/mysqlchk.sh
+    install_mysqlchk $NODE
+    REMOVE_STR="server $NODE"
+    remote_cmd_nofail $LB_HOSTNAME "sed -i.bak '/$REMOVE_STR/d'  /etc/haproxy/haproxy.cfg"
+    remote_cmd $LB_HOSTNAME "echo '        server $NODE ${NODE}:3306 check' >> /etc/haproxy/haproxy.cfg"
+    remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy ${HAPROXY_OPTS}"    
+
+}
+
+
+
+
+
+
+
+
+if [ ! -e $LOCKFILE ]; then
+    trap "rm -f $LOCKFILE; exit" INT TERM EXIT
+    touch $LOCKFILE    
+    case $1 in
+	--prepare)
+    	    prepare
+	    ;;
+	--install)
+	    install_haproxy  $2 $3 $4 $5 $6 $7 $8 $9
+	    ;;
+	--add-node)	
+	    add_node $2 $3 $4 $5 $6 $7 $8 $9
+	    ;;
+	--remove-node)
+	    remove_node $2 $3 $4 $5 $6 $7 $8 $9
+	    ;;
+	--delete)
+	    delete_haproxy  $2 $3 $4 $5 $6 $7 $8 $9
+	    ;;
+	*)
+	    echo "Usage: "
+	    echo "s9s_haproxy --[install|delete|add-node|remove-node]: "
+	    exit 1
+	    ;;
+    esac
+    rm $LOCKFILE
+    trap - INT TERM EXIT
+fi
+

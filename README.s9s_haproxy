@@ -1,0 +1,104 @@
+s9s_haproxy is the new modern version of install-haproxy.sh to installing and managing HAProxy.
+In contrast to install-haproxy.sh, s9s_haproxy allows you do:
+* add node to the load balancer
+* remove a node from the load balancer
+* delete/remove the load balance.
+
+** Installation Example:
+
+Change into the install directory of your deployment package:
+cd s9s-galera-2.1.0/mysql/scripts/install
+
+Download haproxy:
+RH/Centos: yum install git
+Debian/Ubutu: apt-get install git
+git clone git@github.com:severalnines/haproxy.git
+
+s9s-galera-2.1.0/mysql/scripts/install/haproxy
+cd haproxy
+* Install HAProxy:
+./s9s_haproxy --install -i 1 -h 192.168.56.101
+This will install the HAProxy on 192.168.56.101, and all mysql servers
+in cluster id 1 will be load balanced on.
+
+* Delete (remove) HAProxy:
+./s9s_haproxy --delete -i 1 -h 192.168.56.101
+Uninstalls HAProxy and disables loadbalancing.
+
+* Add a node to HAProxy
+./s9s_haproxy --add-node -i 1 -h 192.168.56.101 -n 192.168.56.107
+This command adds server 192.168.56.107 to the servers loadbalanced by HAProxy.
+
+* Remove a node from HAProxy
+./s9s_haproxy --remove-node -i 1 -h 192.168.56.101 -n 192.168.56.107
+This command removes server 192.168.56.107 from the servers loadbalanced by HAProxy.
+
+** SSH:
+
+*** IMPORTANT *************************************
+Make sure you can SSH to $LB_HOST without password:
+   ssh $USER@$LB_HOST
+If that is not possible do:
+   cd ..
+   ./shared-ssh-keys.sh $LB_HOST
+Then try to install again. You must also setup 
+sudo if you are not running as root:
+see "sudo" in the artice:
+ http://support.severalnines.com/entries/20614858-server-requirements-on-premise-amis-other-images
+
+
+** Files:
+mysqlchk.sh.mysqlcluster - script to check if the mysql server is up and running (for MySQL Cluster)
+mysqlchk.sh.galera - script to check if the mysql server is up and running (for Galera)
+xinetd_mysqlchk  - the xinetd script for the mysqlchk.
+haproxy.cfg.tmpl.rhel - base template for the haproxy.cfg file. Redhat.
+haproxy.cfg.tmpl.debian - base template for the haproxy.cfg file. Debian.
+makecfg.sh - writes the haproxy.cfg file, called from install-haproxy.sh
+install-haproxy.sh - queries the cmon db to get a list of mysql server hosts, calls makecfg.sh
+                     installs ha proxy on the specified host, and installs xinetd, and mysqlchk on 
+		     the list of hosts. It also performs tuning of the TCP stack where haproxy is installed.
+
+
+** Make modifications / customizations
+
+- In haproxy.cfg.tmpl.debian|rhel  
+   You may want to modify parameters here in the template file. Usually the defaults works good.
+   In this file you can also change the PASSWORD to the stats www interface.
+   user admin insecure-password PASSWORD
+   user stats insecure-password PASSWORD
+- makecfg.sh
+  Perhaps you want to change settings here:
+  default-server port 9200 inter 2s downinter 5s rise 3 fall 2 slowstart 60s maxconn 256 maxqueue 128 weight 100
+  But the default values work pretty well.
+- mysqlchk.sh.mysqlcluster (MySQL Cluster)
+  You should change CHECK_QUERY to make a PRIMARY KEY select that always succeed on an NDB table.
+- install-haproxy.sh
+  Change the name of the HaProxy (LB_NAME) and also what mysql port the HaProxy should listen on:
+  HAPROXY_MYSQL_LISTEN_PORT="33306"
+  LB_NAME="production"
+
+
+** Deployment
+For smaller setups (a couple of web servers) you can isntall one HaProxy on each Web Server.  
+For larger setups it may make sense to have a HaProxy layer so that many web servers goes to one HaProxy.
+
+** Reboot the HAProxy node.
+If you don't reboot you may get strange error messages after a while:
+Can't connect to MySQL server on '10.0.1.10' (99)
+Can't connect to MySQL server on '10.0.1.10' (99)
+
+
+** GRANT the load balancer host access to the mysql servers
+E.g, if the LB is installed on 10.0.1.11 do:
+GRANT INSERT, SELECT, DELETE, UPDATE ON database.* TO 'johan'@'10.0.1.11' IDENTIFIED BY 'severalnines';
+on all mysql servers in the loadbalancer set.
+
+
+** TODO / Further tuning
+You may have to tune your TCP further to avoid http://bugs.mysql.com/bug.php?id=40662 (not a bug, expected behavior) if you open/close connects "too" fast.
+E.g, this TCP parameter can be tuned: tcp_fin_timeout. The install-haproxy script sets it to '5'.
+If you use bencher to benchmark you may run into this issue as bencher will stress the system quite a lot.
+
+You can also try 'tcp_tw_reuse=1' by doing echo "1" > /proc/sys/net/ipv4/tcp_tw_reuse
+This is not currently set auto (more testing needed).
+EOF
