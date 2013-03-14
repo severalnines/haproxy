@@ -188,8 +188,9 @@ echo "*************************************************************"
 echo "* Installing haproxy on $LB_HOST                            *"
 echo "*************************************************************"
 
-if [ $OS = "rhel" l] || [ $OS = "centos6" ]; then
-   remote_cmd2 $LB_HOST "$EPEL"
+if [ $OS = "rhel" ] || [ $OS = "centos6" ]; then
+   remote_cmd2 $LB_HOST "rpm --import http://apt.sw.be/RPM-GPG-KEY.dag.txt"
+   remote_cmd2 $LB_HOST "rpm -Uvh http://packages.sw.be/rpmforge-release/rpmforge-release-0.5.2-2.el6.rf.x86_64.rpm"
 fi
 $PKG_MGR2 $PHP_CURL
 remote_cmd $LB_HOST "$PKG_MGR haproxy"
