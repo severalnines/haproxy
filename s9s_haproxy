@@ -724,8 +724,9 @@ function install_haproxy
     esac
 
     if [ -n "$LB_NODE_LIST" ]; then
-        ## TODO FIX IN LIST
-	QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and (h.hostname in ) and connected=1 and m.cid=$CLUSTER_ID"
+	LB_NODE_LIST2=`echo $LB_NODE_LIST | sed "s/,/','/g" | sed "s/^/'/g" | sed "s/$/'/g" |sed "s/[ ]*//g"`
+	
+	QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and (h.hostname in ($LB_NODE_LIST2) or h.ip in ($LB_NODE_LIST2)  ) and connected=1 and m.cid=$CLUSTER_ID"
         hostnames=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
     else
 	QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and connected=1 and m.cid=$CLUSTER_ID"
@@ -916,17 +917,17 @@ function delete_haproxy
 
     
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_haproxy --install -p  missing"
+      echo "s9s_haproxy --delete -p  missing"
       exit 1
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_haproxy --install -i <cluster id>  missing"
+      echo "s9s_haproxy --delete -i <cluster id>  missing"
       exit 1
     fi
 
     if [ -z "$LB_HOSTNAME" ]; then
-        echo "s9s_haproxy --install  -h <loadbalancer host> missing"
+        echo "s9s_haproxy --delete  -h <loadbalancer host> missing"
         exit 1
     fi
     

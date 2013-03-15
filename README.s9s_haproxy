@@ -21,6 +21,11 @@ cd haproxy
 This will install the HAProxy on 192.168.56.101, and all mysql servers
 in cluster id 1 will be load balanced on.
 
+* Install HAProxy on a sub-set of nodes:
+./s9s_haproxy --install -i 1 -h 192.168.56.101 -n192.168.102,192.168.56.103
+This will install the HAProxy on 192.168.56.101, and load balance on 192.168.102,192.168.56.103. 
+Useful if you want to load balance on nodes within one DC only, or have various roles for your nodes.
+
 * Delete (remove) HAProxy:
 ./s9s_haproxy --delete -i 1 -h 192.168.56.101
 Uninstalls HAProxy and disables loadbalancing.
