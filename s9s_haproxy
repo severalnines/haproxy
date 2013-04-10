@@ -695,10 +695,6 @@ function install_haproxy
 		OS=rhel
 	    fi
             ;;
-	centos6)
-	    BUILD="gcc make"
-	    OS=centos6
-	    ;;	
         debian|ubuntu)
             PKG_MGR="apt-get install -y "
             PKG_MGR2="apt-get install -y "
