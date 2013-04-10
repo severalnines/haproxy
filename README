@@ -1,3 +1,13 @@
+
+******************************
+**   IMPORTANT INFORMATION  **
+Install-haproxy.sh is deprecated
+Please use s9s_haproxy instead!
+
+
+*******************************
+
+
 ** Installation Example:
 
 Change into the install directory of your deployment package:
@@ -19,6 +29,7 @@ bash ./install-haproxy.sh 10.0.1.11 rhel mysqlcluster
 NOTE: only tested with bash shell, and if you run with:
 sh install-haproxy...
 it won't work.
+
 
 
 ** SSH:
