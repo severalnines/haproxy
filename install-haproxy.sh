@@ -19,6 +19,11 @@ MYSQL_BINDIR=""
 CLUSTER_ID=1
 CMON_DB='cmon'
 
+echo "install-haproxy.sh is deprecated, please use:"
+echo "  ./s9s_haproxy --install -i 1 -h <lb hostname>"
+echo "s9s_haproxy is located in this directory"
+exit 0
+
 if [ -z "${SUDO}" ]; then
    SUDO="sudo"
 fi
