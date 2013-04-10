@@ -1,0 +1,43 @@
+global
+        pidfile /var/run/haproxy.pid
+        daemon
+        user nobody
+        group nobody
+        stats socket /tmp/haproxy.socket user nobody group nobody mode 600 level admin
+        node NODE_NAME
+        description NODE_DESC
+
+        #* Performance Tuning
+        maxconn 40000
+        spread-checks 3
+        quiet
+defaults
+        #log    global
+        mode    tcp
+        option  dontlognull
+        option tcp-smart-accept
+        option tcp-smart-connect
+        #option dontlog-normal
+        retries 3
+        option redispatch
+        maxconn 40000
+        timeout check   3500ms
+        timeout queue   3500ms
+        timeout connect 3500ms
+        timeout client  10000ms
+        timeout server  10000ms
+
+userlist STATSUSERS
+        group admin users admin
+        user ADMIN_USER insecure-password ADMIN_PASSWORD
+        user stats insecure-password PASSWORD
+
+listen admin_page 0.0.0.0:9600
+        mode http
+        stats enable
+        stats refresh 60s
+        stats uri /
+        acl AuthOkay_ReadOnly http_auth(STATSUSERS)
+        acl AuthOkay_Admin http_auth_group(STATSUSERS) admin
+        stats http-request auth realm admin_page unless AuthOkay_ReadOnly
+        stats admin if AuthOkay_Admin
