@@ -1,3 +1,7 @@
+#############
+DEPRECATED, INSTALL FROM UI
+#############
+
 s9s_haproxy is the new modern version of install-haproxy.sh to installing and managing HAProxy.
 In contrast to install-haproxy.sh, s9s_haproxy allows you do:
 * add node to the load balancer
